@@ -1,0 +1,15 @@
+{
+  "name": "Stribog",
+  "short_name": "Stribog",
+  "description": "Projekty, úlohy, dochádzka a chat tímu Stribog",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#F4F7F6",
+  "theme_color": "#0E6E6E",
+  "lang": "sk",
+  "icons": [
+    { "src": "/icon.svg", "sizes": "any", "type": "image/svg+xml", "purpose": "any" },
+    { "src": "/icon-192.png", "sizes": "192x192", "type": "image/png" },
+    { "src": "/icon-512.png", "sizes": "512x512", "type": "image/png" }
+  ]
+}

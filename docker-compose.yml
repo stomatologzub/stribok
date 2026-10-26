@@ -1,0 +1,32 @@
+# Nasadenie na vlastný server (VPS) s automatickým HTTPS cez Caddy.
+# 1) nasmeruj doménu (A záznam) na IP servera
+# 2) v súbore .env nastav DOMAIN=stribog.tvojadomena.sk (a voliteľne ANTHROPIC_API_KEY)
+# 3) docker compose up -d
+services:
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      - ANTHROPIC_MODEL=${ANTHROPIC_MODEL:-claude-sonnet-5-5}
+      - COOKIE_SECURE=1
+    volumes:
+      - stribog_data:/data
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    environment:
+      - DOMAIN=${DOMAIN:?Nastav DOMAIN v .env}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - caddy_data:/data
+      - caddy_config:/config
+    depends_on:
+      - app
+volumes:
+  stribog_data:
+  caddy_data:
+  caddy_config:

@@ -1,0 +1,11 @@
+{
+  "name": "stribog",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Stribog – projekty, súpisy, úlohy, dochádzka a chat tímu",
+  "engines": { "node": ">=22.5" },
+  "scripts": {
+    "start": "node --no-warnings=ExperimentalWarning server/server.js",
+    "dev": "node --no-warnings=ExperimentalWarning --watch server/server.js"
+  }
+}

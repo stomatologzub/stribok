@@ -12,6 +12,7 @@
 | Dochádzka | príchod/odchod, záznamy, týždenné súčty, tímový prehľad + export .xlsx |
 | Evidencia | objekty, zákazníci, technici (oprávnenia s platnosťou), firemné postupy |
 | Chat | kanál tímu, kanály projektov, vlastné kanály, fotky, úloha zo správy |
+| Prístupy (len vlastný server) | ľudia, roly, PIN-y, deaktivácia, záloha a obnova dát |
 | Ostatné | sidebar / mobilná navigácia, prepínač admin/pracovník, glass dizajn, Game režim |
 
 ## Dátový model (`db`)
@@ -28,14 +29,36 @@
 | `hours/<userId>` | `entries[]` (dátum, od, do, prestávka, projekt), `active` | vlastník + admin | vlastník + admin |
 | `chat/<id>` | `ch` (`team`, `p:<projectId>`, `c:<id>`), `by`, `text`, `photo`, `at` | tím | tím |
 
-„Tím“ = prihlásení členovia s prístupom Contributor a vyšším (`interact`), „admin“ = môže artifact upravovať.
+„Tím“ = každý prihlásený človek, „admin“ = rola Admin (v claude.ai: kto môže artifact upravovať). Pravidlá platia rovnako na vlastnom serveri (`server/server.js`, `RULES`) aj v claude.ai (`capabilities.json`). Platí najkonkrétnejšie pravidlo.
 
-## Prechod na vlastný backend
+## Backend (`server/`)
 
-Všetky prístupy k dátam idú cez `dbApi.doc(...)` / `dbApi.collection(...)` s rozhraním podobným Firestore (`get`, `set`, `update`, `delete`, `add`, `onSnapshot`, `orderBy`, `limit`). Pri presune na Firebase/Firestore stačí:
+`index.html` volá `window.claude.use("db" | "user" | "assets" | "downloads" | "sample" | "team")`. Na vlastnom serveri toto rozhranie poskytuje `server/shim.js`, v claude.ai ho poskytuje claude.ai. Appka sa preto nemusí meniť podľa toho, kde beží.
 
-1. nahradiť `useCap("db")` inicializáciou Firestore a pravidlá z `capabilities.json` prepísať do Firestore Security Rules,
-2. `useCap("user")` nahradiť Firebase Auth (meno, fotka, admin rola),
-3. `useCap("assets")` nahradiť Firebase Storage (fotky sa zobrazujú cez `/_blob/<id>` – treba vymeniť za URL zo Storage),
-4. `sample` (čítanie súpisu z fotiek) nahradiť volaním Claude API zo servera (API kľúč nesmie byť v prehliadači),
-5. `downloads.save` nahradiť bežným stiahnutím cez `<a download>`.
+Server pri doručení `index.html` doplní hlavičku dokumentu, manifest a `<script src="/shim.js">`.
+
+### Tabuľky SQLite (`DATA_DIR/stribog.db`)
+
+| Tabuľka | Obsah |
+|---|---|
+| `docs` | dokumenty appky: `path`, `parent` (kolekcia), `data` (JSON), `updated` |
+| `users` | `id`, `name`, `role` (admin/worker), `color`, `salt` + `pin` (scrypt), `active`, `last_login`, počítadlo chybných pokusov |
+| `sessions` | prihlásenia (token v HttpOnly cookie `stribog_s`, platnosť 180 dní) |
+| `blobs` | metadáta fotiek. Samotné súbory sú v `DATA_DIR/blobs/<id>` |
+
+### API
+
+| Metóda a cesta | Kto | Popis |
+|---|---|---|
+| `GET /api/auth/state` | ktokoľvek | prvé spustenie?, zoznam mien na prihlásenie, prihlásený človek |
+| `POST /api/auth/setup` | len pri prvom spustení | vytvorí prvého admina |
+| `POST /api/auth/login` · `/logout` | ktokoľvek | prihlásenie `{userId, pin}` / odhlásenie |
+| `GET /api/doc?path=` · `PUT` · `PATCH` · `DELETE` | podľa pravidiel | dokument: čítanie, zápis (`{data, merge}`), čiastočná zmena, zmazanie |
+| `POST /api/query` | podľa pravidiel | kolekcia `{path, where, orderBy, limit}` |
+| `POST /api/add` | podľa pravidiel | nový dokument s náhodným id |
+| `GET /api/events` | prihlásený | SSE: cesty zmenených dokumentov. Klient si ich znova načíta, pričom server overí práva. |
+| `POST /api/assets` · `GET /_blob/<id>` | prihlásený | nahratie a zobrazenie fotky (max 15 MB) |
+| `POST /api/sample` | admin | čítanie súpisu z fotiek cez Claude API (`ANTHROPIC_API_KEY`) |
+| `GET/POST /api/users`, `PATCH/DELETE /api/users/<id>` | admin (vlastný PIN aj technik) | správa ľudí a PIN-ov. Vždy ostane aspoň jeden admin. |
+| `GET /api/admin/export` · `POST /api/admin/import` | admin | záloha / obnova všetkých dokumentov |
+| `GET /healthz` | ktokoľvek | kontrola, či server beží |

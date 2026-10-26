@@ -1155,6 +1155,24 @@ body.game .ovc{background:rgba(20,14,52,.9);-webkit-backdrop-filter:none;backdro
   body.game .ttable{background:rgba(20,14,52,.9)}
 }
 @media (prefers-reduced-motion:reduce){*{transition:none!important}}
+
+[data-needs-sample][hidden]{display:none!important}
+/* prístupy (vlastný server) */
+body.own-server .who{cursor:pointer;border-radius:12px}
+body.own-server .who:hover img{box-shadow:0 0 0 3px rgba(43,179,177,.35)}
+.acc-intro,.acc-backup{flex-direction:row;align-items:center;justify-content:space-between;gap:16px;padding:16px 18px;flex-wrap:wrap;margin:14px 0}
+.acc-intro b,.acc-backup b{font-family:var(--f-disp);font-size:15.5px}
+.acc-intro p,.acc-backup p{margin-top:4px}
+.acc-link{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+.acc-link code{font-family:var(--f-num);font-size:13px;padding:8px 12px;border-radius:10px;background:var(--accent-soft);color:var(--accent)}
+.acc-btns{display:flex;gap:8px;flex-wrap:wrap}
+.acc-btns .btn{cursor:pointer}
+.flipv{display:inline-flex;transform:rotate(180deg)}
+.acc-off{display:flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);margin:10px 4px 0}
+.ricon img{width:100%;height:100%;object-fit:cover}
+.acc-me{display:flex;align-items:center;gap:12px;margin:4px 0 14px}
+.acc-me img{width:46px;height:46px;border-radius:50%}
+.acc-me b{display:block;font-size:16px}.acc-me small{color:var(--muted)}
 </style>
 
 <svg width="0" height="0" style="position:absolute" aria-hidden="true">
@@ -1858,7 +1876,7 @@ async function fillPeople(root=document){
 const person=(uid,cls="person")=>`<span class="${cls}"><img data-uid="${esc(uid)}" alt=""><span data-uid="${esc(uid)}">…</span></span>`;
 
 /* ---------- shell ---------- */
-function areasList(){const t=[["tasks","Úlohy","i-tasks"],["hours","Dochádzka","i-clock"]];return isAdmin?[["projects","Projekty","i-sheet"],["reg","Evidencia","i-build"],...t]:t}
+function areasList(){const t=[["tasks","Úlohy","i-tasks"],["hours","Dochádzka","i-clock"]];return isAdmin?[["projects","Projekty","i-sheet"],["reg","Evidencia","i-build"],...t,...(teamApi?[["access","Prístupy","i-user"]]:[])]:t}
 function renderShell(){
   const btn=([k,l,ic])=>`<button data-area="${k}" aria-current="${area===k}" title="${l}">${svgUse(ic)}<span>${l}</span></button>`;
   $("#areas").innerHTML=areasList().map(btn).join("");
@@ -1878,6 +1896,7 @@ function renderArea(){
   else if(area==="projects"){if(proj&&S)render();else renderProjects()}
   else if(area==="reg")renderReg();
   else if(area==="chat")renderChat();
+  else if(area==="access")renderAccess();
 }
 function gate(title,text){
   $("#team").hidden=false;$("#main").hidden=true;
@@ -2178,7 +2197,7 @@ async function setStatus2(id,to){
   if(to==="doing"&&!t.assignee)data.assignee=myId;
   try{await dbApi.doc("tasks/"+id).update(data);toast(to==="done"?"Hotovo – výborne":to==="doing"?"Úloha rozpracovaná":"Úloha znova otvorená");if(to==="done")gameReward(50,"Úloha splnená");else if(to==="doing")gameReward(0,"Quest prijatý")}catch(err){toast(writeErr(err))}
 }
-function writeErr(err){const c=err&&err.code;return c==="quota_exceeded"?"Úložisko je plné – daj vedieť adminovi":c==="invalid_argument"?"Na toto nemáš oprávnenie":"Nepodarilo sa uložiť – skús znova"}
+function writeErr(err){const c=err&&err.code;return c==="quota_exceeded"?"Úložisko je plné – daj vedieť adminovi":(c==="invalid_argument"||c==="permission_denied")?"Na toto nemáš oprávnenie":c==="unavailable"?"Server nie je dostupný – skús znova":"Nepodarilo sa uložiť – skús znova"}
 
 /* ---------- photos: phone camera through the file picker, shrunk before upload ---------- */
 /* any photo -> JPEG (HEIC/HEIF included): Safari decodes HEIC itself, other browsers load heic2any on demand */
@@ -3700,6 +3719,106 @@ function taskTable(l){
       <span class="tt-s">${st}</span></button>`}).join("")}</div>`;
 }
 
+/* ====================================================================
+   PRÍSTUPY – len na vlastnom serveri (schopnosť "team"): ľudia, roly, PIN-y, záloha dát
+   ==================================================================== */
+let teamApi=null, teamList=[], teamLoaded=false, teamShowOff=false;
+const roleLbl=r=>r==="admin"?"Admin":"Technik";
+const lastLoginTxt=t=>{if(!t)return "ešte sa neprihlásil(a)";const d=new Date(t),n=new Date();
+  if(ymd(d)===ymd(n))return "dnes "+d.toLocaleTimeString("sk-SK",{hour:"2-digit",minute:"2-digit"});
+  return d.toLocaleDateString("sk-SK",{day:"numeric",month:"numeric",year:"numeric"})};
+const randPin=()=>String(Math.floor(1000+Math.random()*9000));
+async function loadTeam(){try{teamList=await teamApi.list();teamLoaded=true}catch(err){toast(err.message||"Nepodarilo sa načítať tím")}if(area==="access")renderAccessList()}
+function renderAccess(){
+  $("#team").innerHTML=`<div class="hello"><div><div class="d">Admin</div><h2>Prístupy</h2></div><button class="btn primary" data-xact="new">${svgUse("i-plus")}Pridať človeka</button></div>
+    <div class="card acc-intro"><div><b>Ako sa prihlasuje tím</b><p class="note-p">Pošli im odkaz na aplikáciu. Každý si vyberie svoje meno a zadá PIN, ktorý mu nastavíš. Prihlásenie si zariadenie pamätá pol roka.</p></div>
+      <div class="acc-link"><code>${esc(teamApi.origin)}</code><button class="btn" data-xact="copy">Kopírovať odkaz</button></div></div>
+    <div class="rtable"><div class="rhead"><span>Človek</span><span>Rola</span><span>Posledné prihlásenie</span><span></span></div><div id="accList"></div></div>
+    <label class="acc-off"><input type="checkbox" id="accOff"${teamShowOff?" checked":""}> Zobraziť aj deaktivovaných</label>
+    <div class="card acc-backup"><div><b>Záloha dát</b><p class="note-p">Stiahne všetky projekty, súpisy, úlohy, dochádzku, chat a evidenciu do jedného súboru. Fotky ostávajú na serveri v priečinku s dátami.</p></div>
+      <div class="acc-btns"><a class="btn" href="${esc(teamApi.exportUrl)}" download>${svgUse("i-dl")}Stiahnuť zálohu</a><label class="btn">${`<span class="flipv">${svgUse("i-dl")}</span>`}Obnoviť zo zálohy<input type="file" accept=".json,application/json" data-ximport hidden></label></div></div>`;
+  renderAccessList();if(!teamLoaded)loadTeam();
+}
+function renderAccessList(){
+  const box=$("#accList");if(!box)return;
+  if(!teamLoaded){box.innerHTML=`<p class="loading">Načítavam…</p>`;return}
+  const rows=teamList.filter(u=>teamShowOff||u.active);
+  box.innerHTML=rows.map(u=>`<div class="rrow${u.active?"":" off"}"><button class="rmain" data-xact="edit" data-id="${esc(u.id)}"><span class="ricon"><img data-uid="${esc(u.id)}" alt=""></span>
+      <span class="rtxt"><b>${esc(u.name)}${u.id===myId?" (ja)":""}</b><small>${u.active?"aktívny":"deaktivovaný"}</small></span></button>
+    <span class="rcol"><span class="stb${u.role==="admin"?" active":""}">${roleLbl(u.role)}</span></span>
+    <span class="rcol"><small>${esc(lastLoginTxt(u.lastLogin))}</small></span>
+    <span class="racts"><button class="ib" data-xact="edit" data-id="${esc(u.id)}" title="Upraviť">${svgUse("i-edit")}</button></span></div>`).join("")||`<p class="loading">Zatiaľ nikto.</p>`;
+  fillPeople(box);
+}
+function accSheet(id){
+  const u=id?teamList.find(x=>x.id===id):null, isNew=!u, self=u&&u.id===myId;
+  const pin=isNew?randPin():"";
+  openSheet(`<div class="grab"></div><h3>${isNew?"Pridať človeka":esc(u.name)}</h3>
+    <label class="fld"><span>Meno a priezvisko</span><input class="f" id="ac-name" value="${esc(u?u.name:"")}" autocomplete="off" maxlength="60"></label>
+    <div class="row2"><label class="fld"><span>Rola</span><select class="f" id="ac-role"${self?" disabled":""}><option value="worker"${u&&u.role==="admin"?"":" selected"}>Technik – úlohy, dochádzka, chat</option><option value="admin"${u&&u.role==="admin"?" selected":""}>Admin – všetko vrátane cien</option></select></label>
+      <label class="fld"><span>${isNew?"PIN":"Nový PIN (nechaj prázdne = bez zmeny)"}</span><input class="f mono" id="ac-pin" inputmode="numeric" pattern="[0-9]*" maxlength="8" value="${pin}" autocomplete="off"></label></div>
+    <p class="note-p">${isNew?"PIN sme vygenerovali – môžeš ho zmeniť. Povedz ho človeku osobne, v aplikácii sa už znova nezobrazí.":"Po zmene PIN-u alebo roly sa človek musí prihlásiť znova."}</p>
+    <div class="sheet-a">${!isNew&&!self?`<button class="btn${u.active?" danger":""}" data-xact="toggle" data-id="${esc(u.id)}">${u.active?"Deaktivovať":"Znova aktivovať"}</button>`:""}<button class="btn" data-sact="close">Zrušiť</button><button class="btn primary" data-xact="save" data-id="${isNew?"":esc(u.id)}">${isNew?"Pridať":"Uložiť"}</button></div>`);
+  setTimeout(()=>{const n=$("#ac-name");if(n&&isNew)n.focus()},40);
+}
+async function accSave(id){
+  const name=$("#ac-name").value.trim(), role=$("#ac-role").value, pin=$("#ac-pin").value.trim();
+  if(!name){toast("Zadaj meno");return}
+  if((!id||pin)&&!/^\d{4,8}$/.test(pin)){toast("PIN musí mať 4–8 číslic");return}
+  const btn=$('[data-xact="save"]');if(btn)btn.disabled=true;
+  try{
+    if(!id){await teamApi.add({name,role,pin});toast(`${name} pridaný – PIN ${pin}`)}
+    else{const u=teamList.find(x=>x.id===id)||{};const patch={};if(name!==u.name)patch.name=name;if(id!==myId&&role!==u.role)patch.role=role;if(pin)patch.pin=pin;
+      if(Object.keys(patch).length)await teamApi.update(id,patch);toast(pin?"Uložené – nový PIN "+pin:"Uložené")}
+    closeSheet();await loadTeam();
+  }catch(err){toast(err.message||"Nepodarilo sa uložiť");if(btn)btn.disabled=false}
+}
+async function accToggle(id,b){
+  const u=teamList.find(x=>x.id===id);if(!u)return;
+  if(u.active&&!b.dataset.confirm){b.dataset.confirm="1";b.textContent="Naozaj deaktivovať?";return}
+  try{await teamApi.update(id,{active:!u.active});toast(u.active?`${u.name} už sa neprihlási`:`${u.name} je znova aktívny`);closeSheet();await loadTeam()}
+  catch(err){toast(err.message||"Nepodarilo sa uložiť")}
+}
+let accImport=null;
+function accImportSheet(data,name){
+  accImport=data;const n=Object.keys(data.docs||{}).length;
+  openSheet(`<div class="grab"></div><h3>Obnoviť zo zálohy</h3>
+    <p class="note-p">Súbor <b>${esc(name)}</b> obsahuje ${n} záznamov${data.exportedAt?` (záloha z ${esc(new Date(data.exportedAt).toLocaleString("sk-SK"))})`:""}.</p>
+    <label class="fld"><span>Ako obnoviť</span><select class="f" id="ac-mode"><option value="merge">Doplniť – prepíše len záznamy zo zálohy, ostatné nechá</option><option value="replace">Nahradiť všetko – zmaže súčasné dáta a dá tam zálohu</option></select></label>
+    <p class="note-p">Účty a PIN-y ostávajú bez zmeny.</p>
+    <div class="sheet-a"><button class="btn" data-sact="close">Zrušiť</button><button class="btn primary" data-xact="doimport">Obnoviť</button></div>`);
+}
+function accountSheet(){
+  const m=teamApi.me()||{};
+  openSheet(`<div class="grab"></div><h3>Môj účet</h3>
+    <div class="acc-me"><img alt="" src="${esc(me.avatarUrl)}"><div><b>${esc(me.name)}</b><small>${realAdmin?"Admin":"Technik"}</small></div></div>
+    <div class="row2">${realAdmin?"":`<label class="fld"><span>Súčasný PIN</span><input class="f mono" id="my-old" type="password" inputmode="numeric" maxlength="8" autocomplete="current-password"></label>`}
+      <label class="fld"><span>Nový PIN (4–8 číslic)</span><input class="f mono" id="my-new" type="password" inputmode="numeric" maxlength="8" autocomplete="new-password"></label></div>
+    <div class="sheet-a"><button class="btn danger" data-xact="logout">Odhlásiť sa</button><button class="btn" data-sact="close">Zavrieť</button><button class="btn primary" data-xact="mypin" data-id="${esc(m.id||myId)}">Zmeniť PIN</button></div>`);
+}
+document.addEventListener("click",async e=>{
+  if(teamApi&&e.target.closest("#who")){accountSheet();return}
+  const b=e.target.closest("[data-xact]");if(!b||!teamApi)return;
+  const a=b.dataset.xact,id=b.dataset.id;
+  if(a==="new")accSheet(null);
+  else if(a==="edit")accSheet(id);
+  else if(a==="save")accSave(id);
+  else if(a==="toggle")accToggle(id,b);
+  else if(a==="copy"){try{await navigator.clipboard.writeText(teamApi.origin);toast("Odkaz skopírovaný")}catch(_){toast(teamApi.origin)}}
+  else if(a==="logout")teamApi.logout();
+  else if(a==="mypin"){const o=($("#my-old")||{}).value||"",n=$("#my-new").value;if(!/^\d{4,8}$/.test(n)){toast("Nový PIN musí mať 4–8 číslic");return}
+    try{await teamApi.update(id,realAdmin?{pin:n}:{pin:n,oldPin:o});closeSheet();toast("PIN zmenený")}catch(err){toast(err.message||"Nepodarilo sa zmeniť PIN")}}
+  else if(a==="doimport"){if(!accImport)return;const rep=$("#ac-mode").value==="replace";
+    if(rep&&!b.dataset.confirm){b.dataset.confirm="1";b.textContent="Naozaj zmazať a nahradiť?";b.classList.add("danger");return}
+    b.disabled=true;try{const r=await teamApi.importData(accImport,rep);closeSheet();toast(`Obnovené – ${r.count} záznamov`)}catch(err){toast(err.message||"Obnovenie zlyhalo");b.disabled=false}}
+});
+document.addEventListener("change",async e=>{
+  const el=e.target;
+  if(el.id==="accOff"){teamShowOff=el.checked;renderAccessList();return}
+  if(el.matches&&el.matches("input[data-ximport]")){const f=el.files&&el.files[0];el.value="";if(!f)return;
+    try{const d=JSON.parse(await f.text());if(!d||typeof d.docs!=="object")throw 0;accImportSheet(d,f.name)}catch(_){toast("Súbor nie je záloha Stribogu")}}
+});
+
 async function useCap(name){try{return await window.claude.use(name)}catch(_){return null}}
 async function boot(){
   let n=0;while(!(window.claude&&window.claude.use)&&n++<40)await new Promise(r=>setTimeout(r,100));
@@ -3707,6 +3826,7 @@ async function boot(){
   [dbApi,userApi,assetsApi,downloadsApi,commentsApi]=await Promise.all(["db","user","assets","downloads","comments"].map(useCap));
   if(!dbApi||!userApi){gate("Prihlás sa","Úlohy a dochádzka fungujú len po prihlásení do claude.ai v tvojej organizácii.");return}
   me=await userApi.me();myId=me.id;isAdmin=!!me.canEdit;realAdmin=isAdmin;
+  teamApi=await Promise.race([useCap("team"),new Promise(r=>setTimeout(()=>r(null),1500))]);if(teamApi)document.body.classList.add("own-server");
   if(isAdmin){sampleApi=await useCap("sample");if(sampleApi){const l=await sampleApi.limits().catch(()=>null);if(l&&l.images){sampleImgMax=l.images.maxCount||0;document.querySelectorAll("[data-needs-sample]").forEach(x=>x.hidden=false)}}}
   if(!myId){gate("Chýba prístup","Tvoj účet tu nemá identitu. Požiadaj admina, aby ti aplikáciu nazdieľal s prístupom Contributor.");return}
   $("#who").innerHTML=`<span style="display:flex;flex-direction:column;align-items:flex-end;min-width:0"><span class="wn"></span><span class="role">${isAdmin?"admin":"tím"}</span></span><img alt="" src="${esc(me.avatarUrl)}">`;
