@@ -1255,7 +1255,7 @@ body.own-server .who:hover img{box-shadow:0 0 0 3px rgba(43,179,177,.35)}
 <div class="viewer" id="viewer" hidden><img id="viewerImg" alt="Fotka"></div>
 <div class="clm" id="clientView" hidden role="dialog" aria-modal="true" aria-label="Kalkulácia pre klienta">
   <div class="clm-bar"><b>Kalkulácia pre klienta – náhľad z aktuálnych čísel</b>
-    <div class="acts"><button class="btn gold" id="clDownload" hidden>Stiahnuť pre klienta (.html)</button>
+    <div class="acts"><button class="btn gold" id="clDownload" hidden>Stiahnuť pre klienta (.html)</button><button class="btn" id="clPublish" hidden>Vytvoriť odkaz pre klienta</button>
       <a class="btn" href="https://claude.ai/artifact/RYT4jpLfu8PCXhHY4Gjj1W" target="_blank" rel="noopener">Verejná stránka</a>
       <button class="btn" id="clClose">Zavrieť</button></div>
     <span class="clm-note">Bez interných poznámok, nezrovnalostí a ručných súčtov. Stiahnutý súbor pošleš klientovi ako prílohu. Verejná stránka ukazuje stav, keď ju naposledy aktualizoval Claude – na aktualizáciu napíš „aktualizuj kalkuláciu“.</span></div>
@@ -1876,7 +1876,7 @@ async function fillPeople(root=document){
 const person=(uid,cls="person")=>`<span class="${cls}"><img data-uid="${esc(uid)}" alt=""><span data-uid="${esc(uid)}">…</span></span>`;
 
 /* ---------- shell ---------- */
-function areasList(){const t=[["tasks","Úlohy","i-tasks"],["hours","Dochádzka","i-clock"]];return isAdmin?[["projects","Projekty","i-sheet"],["reg","Evidencia","i-build"],...t,...(teamApi?[["access","Prístupy","i-user"]]:[])]:t}
+function areasList(){const t=[["tasks","Úlohy","i-tasks"],["hours","Dochádzka","i-clock"]];return isAdmin?[["projects","Projekty","i-sheet"],["reg","Evidencia","i-build"],...t,(teamApi?["access","Prístupy","i-user"]:["access","Export dát","i-dl"])]:t}
 function renderShell(){
   const btn=([k,l,ic])=>`<button data-area="${k}" aria-current="${area===k}" title="${l}">${svgUse(ic)}<span>${l}</span></button>`;
   $("#areas").innerHTML=areasList().map(btn).join("");
@@ -3730,13 +3730,14 @@ const lastLoginTxt=t=>{if(!t)return "ešte sa neprihlásil(a)";const d=new Date(
 const randPin=()=>String(Math.floor(1000+Math.random()*9000));
 async function loadTeam(){try{teamList=await teamApi.list();teamLoaded=true}catch(err){toast(err.message||"Nepodarilo sa načítať tím")}if(area==="access")renderAccessList()}
 function renderAccess(){
+  if(!teamApi){renderMigrate();return}
   $("#team").innerHTML=`<div class="hello"><div><div class="d">Admin</div><h2>Prístupy</h2></div><button class="btn primary" data-xact="new">${svgUse("i-plus")}Pridať človeka</button></div>
     <div class="card acc-intro"><div><b>Ako sa prihlasuje tím</b><p class="note-p">Pošli im odkaz na aplikáciu. Každý si vyberie svoje meno a zadá PIN, ktorý mu nastavíš. Prihlásenie si zariadenie pamätá pol roka.</p></div>
       <div class="acc-link"><code>${esc(teamApi.origin)}</code><button class="btn" data-xact="copy">Kopírovať odkaz</button></div></div>
     <div class="rtable"><div class="rhead"><span>Človek</span><span>Rola</span><span>Posledné prihlásenie</span><span></span></div><div id="accList"></div></div>
     <label class="acc-off"><input type="checkbox" id="accOff"${teamShowOff?" checked":""}> Zobraziť aj deaktivovaných</label>
-    <div class="card acc-backup"><div><b>Záloha dát</b><p class="note-p">Stiahne všetky projekty, súpisy, úlohy, dochádzku, chat a evidenciu do jedného súboru. Fotky ostávajú na serveri v priečinku s dátami.</p></div>
-      <div class="acc-btns"><a class="btn" href="${esc(teamApi.exportUrl)}" download>${svgUse("i-dl")}Stiahnuť zálohu</a><label class="btn">${`<span class="flipv">${svgUse("i-dl")}</span>`}Obnoviť zo zálohy<input type="file" accept=".json,application/json" data-ximport hidden></label></div></div>`;
+    <div class="card acc-backup"><div><b>Záloha dát</b><p class="note-p">Stiahne všetky projekty, súpisy, úlohy, dochádzku, chat a evidenciu do jedného súboru. Verzia „aj s fotkami“ je väčšia, ale dá sa z nej obnoviť úplne všetko aj na inom serveri.</p></div>
+      <div class="acc-btns"><a class="btn" href="${esc(teamApi.exportUrl)}" download>${svgUse("i-dl")}Stiahnuť zálohu</a><a class="btn" href="${esc(teamApi.exportUrl)}?photos=1" download>${svgUse("i-dl")}Záloha aj s fotkami</a><label class="btn">${`<span class="flipv">${svgUse("i-dl")}</span>`}Obnoviť zo zálohy<input type="file" accept=".json,application/json" data-ximport hidden></label></div></div>`;
   renderAccessList();if(!teamLoaded)loadTeam();
 }
 function renderAccessList(){
@@ -3756,8 +3757,8 @@ function accSheet(id){
   openSheet(`<div class="grab"></div><h3>${isNew?"Pridať človeka":esc(u.name)}</h3>
     <label class="fld"><span>Meno a priezvisko</span><input class="f" id="ac-name" value="${esc(u?u.name:"")}" autocomplete="off" maxlength="60"></label>
     <div class="row2"><label class="fld"><span>Rola</span><select class="f" id="ac-role"${self?" disabled":""}><option value="worker"${u&&u.role==="admin"?"":" selected"}>Technik – úlohy, dochádzka, chat</option><option value="admin"${u&&u.role==="admin"?" selected":""}>Admin – všetko vrátane cien</option></select></label>
-      <label class="fld"><span>${isNew?"PIN":"Nový PIN (nechaj prázdne = bez zmeny)"}</span><input class="f mono" id="ac-pin" inputmode="numeric" pattern="[0-9]*" maxlength="8" value="${pin}" autocomplete="off"></label></div>
-    <p class="note-p">${isNew?"PIN sme vygenerovali – môžeš ho zmeniť. Povedz ho človeku osobne, v aplikácii sa už znova nezobrazí.":"Po zmene PIN-u alebo roly sa človek musí prihlásiť znova."}</p>
+      <label class="fld"><span>${isNew?"PIN":u.active?"Nový PIN (nechaj prázdne = bez zmeny)":"PIN (povinný pri aktivácii)"}</span><input class="f mono" id="ac-pin" inputmode="numeric" pattern="[0-9]*" maxlength="8" value="${pin}" autocomplete="off"></label></div>
+    <p class="note-p">${!isNew&&!u.active?"Účet je deaktivovaný (napr. prenesený z claude.ai). Zadaj mu PIN a klikni Znova aktivovať – staré úlohy a dochádzka mu ostanú.":isNew?"PIN sme vygenerovali – môžeš ho zmeniť. Povedz ho človeku osobne, v aplikácii sa už znova nezobrazí.":"Po zmene PIN-u alebo roly sa človek musí prihlásiť znova."}</p>
     <div class="sheet-a">${!isNew&&!self?`<button class="btn${u.active?" danger":""}" data-xact="toggle" data-id="${esc(u.id)}">${u.active?"Deaktivovať":"Znova aktivovať"}</button>`:""}<button class="btn" data-sact="close">Zrušiť</button><button class="btn primary" data-xact="save" data-id="${isNew?"":esc(u.id)}">${isNew?"Pridať":"Uložiť"}</button></div>`);
   setTimeout(()=>{const n=$("#ac-name");if(n&&isNew)n.focus()},40);
 }
@@ -3776,7 +3777,10 @@ async function accSave(id){
 async function accToggle(id,b){
   const u=teamList.find(x=>x.id===id);if(!u)return;
   if(u.active&&!b.dataset.confirm){b.dataset.confirm="1";b.textContent="Naozaj deaktivovať?";return}
-  try{await teamApi.update(id,{active:!u.active});toast(u.active?`${u.name} už sa neprihlási`:`${u.name} je znova aktívny`);closeSheet();await loadTeam()}
+  const patch={active:!u.active};
+  if(!u.active){const pin=($("#ac-pin")||{}).value||"";if(!/^\d{4,8}$/.test(pin.trim())){toast("Najprv zadaj PIN (4–8 číslic)");const f=$("#ac-pin");if(f)f.focus();return}patch.pin=pin.trim();
+    const r=($("#ac-role")||{}).value;if(r&&r!==u.role)patch.role=r;const n=($("#ac-name")||{}).value;if(n&&n.trim()&&n.trim()!==u.name)patch.name=n.trim()}
+  try{await teamApi.update(id,patch);toast(u.active?`${u.name} už sa neprihlási`:`${patch.name||u.name} je aktívny – PIN ${patch.pin}`);closeSheet();await loadTeam()}
   catch(err){toast(err.message||"Nepodarilo sa uložiť")}
 }
 let accImport=null;
@@ -3817,6 +3821,67 @@ document.addEventListener("change",async e=>{
   if(el.id==="accOff"){teamShowOff=el.checked;renderAccessList();return}
   if(el.matches&&el.matches("input[data-ximport]")){const f=el.files&&el.files[0];el.value="";if(!f)return;
     try{const d=JSON.parse(await f.text());if(!d||typeof d.docs!=="object")throw 0;accImportSheet(d,f.name)}catch(_){toast("Súbor nie je záloha Stribogu")}}
+});
+
+/* ---------- export z claude.ai pre vlastný server ---------- */
+function renderMigrate(){
+  $("#team").innerHTML=`<div class="hello"><div><div class="d">Admin</div><h2>Export dát</h2></div></div>
+    <div class="card acc-backup"><div><b>Presun na vlastný server</b><p class="note-p">Stiahne všetky projekty, súpisy, úlohy, dochádzku, chat, evidenciu, ľudí aj fotky do jedného súboru. Na vlastnom serveri ho nahráš pri prvom spustení (tlačidlo „Preniesť dáta zo zálohy“) a vyberieš sa v zozname ako admin. Ostatným potom v Prístupoch nastavíš PIN.</p></div>
+      <div class="acc-btns"><button class="btn primary" data-xmig="1">${svgUse("i-dl")}Stiahnuť všetky dáta</button></div></div>
+    <p class="note-p" id="migNote"></p>`;
+}
+const b64Blob=blob=>new Promise((res,rej)=>{const r=new FileReader();r.onload=()=>res(String(r.result).split(",")[1]);r.onerror=rej;r.readAsDataURL(blob)});
+async function exportForServer(btn){
+  const note=$("#migNote"),say=t=>{if(note)note.textContent=t;btn.innerHTML=`${svgUse("i-dl")}${esc(t)}`};
+  btn.disabled=true;
+  try{
+    const docs={};
+    for(const c of ["admin","meta","tasks","chat","hours"]){say("Načítavam "+c+"…");const s=await dbApi.collection(c).get();s.docs.forEach(d=>{docs[c+"/"+d.id]=d.data()})}
+    const ids=new Set([myId]),photos=new Set(),okId=x=>typeof x==="string"&&/^[A-Za-z0-9_.:@-]{1,80}$/.test(x);
+    for(const [k,v] of Object.entries(docs)){
+      if(k.startsWith("hours/"))ids.add(k.slice(6));
+      if(k.startsWith("tasks/")){["assignee","createdBy","doneBy"].forEach(f=>ids.add(v[f]));[v.review,v.proof].forEach(o=>o&&ids.add(o.by));(v.photos||[]).forEach(p=>{ids.add(p.by);if(p.id)photos.add(p.id)})}
+      if(k.startsWith("chat/")){ids.add(v.by);if(v.photo)photos.add(v.photo)}
+    }
+    (technicians||[]).forEach(t=>ids.add(t.userId));
+    const list=[...ids].filter(okId);
+    const ps=list.length?await userApi.profiles(list):{};
+    const people=list.map(i=>({id:i,name:(ps[i]&&ps[i].name)||"Kolega",role:i===myId?"admin":"worker"}));
+    const blobs={};let n=0,miss=0;
+    for(const id of photos){say(`Sťahujem fotky ${++n}/${photos.size}…`);
+      try{const r=await fetch("/_blob/"+id);if(!r.ok)throw 0;const b=await r.blob();blobs[id]={type:b.type||"image/jpeg",data:await b64Blob(b)}}catch(_){miss++}}
+    const out={app:"stribog",version:2,source:"claude.ai",exportedAt:new Date().toISOString(),docs,people,blobs};
+    say("Ukladám súbor…");
+    await downloadsApi.save({filename:`stribog-export-${ymd(new Date())}.json`,data:JSON.stringify(out)});
+    if(note)note.textContent=`Hotovo: ${Object.keys(docs).length} záznamov, ${people.length} ľudí, ${Object.keys(blobs).length} fotiek${miss?` (${miss} fotiek sa nepodarilo stiahnuť)`:""}.`;
+    btn.innerHTML=`${svgUse("i-dl")}Stiahnuť znova`;
+  }catch(err){if(!(err&&err.code==="declined"))toast("Export zlyhal – skús znova");btn.innerHTML=`${svgUse("i-dl")}Stiahnuť všetky dáta`;if(note)note.textContent=""}
+  btn.disabled=false;
+}
+document.addEventListener("click",e=>{const b=e.target.closest("[data-xmig]");if(b&&!b.disabled)exportForServer(b)});
+
+/* ---------- odkaz pre klienta (vlastný server) ---------- */
+let clPubUrl=null;
+function clPubRender(){
+  const a=$("#clientView .acts a");if(!a)return;
+  a.hidden=!clPubUrl;if(clPubUrl){a.href=clPubUrl;a.textContent="Otvoriť odkaz"}
+  const b=$("#clPublish");if(b){b.hidden=false;b.textContent=clPubUrl?"Aktualizovať odkaz":"Vytvoriť odkaz pre klienta"}
+}
+async function clPubLoad(){
+  if(!teamApi||!S)return;
+  const n=$("#clientView .clm-note");if(n)n.textContent="Bez interných poznámok, nezrovnalostí a ručných súčtov. Odkaz pre klienta funguje bez prihlásenia a ukazuje stav pri poslednom „Aktualizovať odkaz“. Súbor .html môžeš poslať aj ako prílohu.";
+  clPubUrl=null;clPubRender();
+  try{const r=await teamApi.publicLink(proj);clPubUrl=r.url?location.origin+r.url:null}catch(_){}
+  clPubRender();
+}
+$("#btnClient").addEventListener("click",()=>{clPubLoad()});
+document.addEventListener("click",async e=>{
+  const b=e.target.closest("#clPublish");if(!b||!teamApi||!S)return;
+  b.disabled=true;
+  try{const r=await teamApi.publish(proj,clientFile());clPubUrl=location.origin+r.url;clPubRender();
+    try{await navigator.clipboard.writeText(clPubUrl);toast("Odkaz pre klienta je aktuálny a skopírovaný")}catch(_){toast("Odkaz pre klienta je aktuálny")}}
+  catch(err){toast(err.message||"Nepodarilo sa zverejniť")}
+  b.disabled=false;
 });
 
 async function useCap(name){try{return await window.claude.use(name)}catch(_){return null}}

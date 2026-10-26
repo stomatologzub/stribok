@@ -166,6 +166,8 @@
     update: (id, patch) => api("PATCH", "/api/users/" + encodeURIComponent(id), patch),
     remove: id => api("DELETE", "/api/users/" + encodeURIComponent(id)),
     exportUrl: "/api/admin/export",
+    publicLink: pid => api("GET", "/api/public?projectId=" + encodeURIComponent(pid)),
+    publish: (pid, html) => api("POST", "/api/public", { projectId: pid, html }),
     importData: (data, replace) => api("POST", "/api/admin/import", { docs: data.docs || data, replace: !!replace }),
     logout: async () => { await api("POST", "/api/auth/logout").catch(() => {}); try { localStorage.removeItem("stribog-area"); } catch {} location.reload(); },
     me: () => clone(me),
@@ -234,24 +236,56 @@
     let st;
     try { st = await api("GET", "/api/auth/state"); }
     catch (e) { mount().innerHTML = card(`<h2>Server nie je dostupný</h2><p>${esc(e.message)}</p><div class="sl-a"><button class="sl-btn pr" onclick="location.reload()">Skúsiť znova</button></div>`); return; }
-    if (st.setup) return renderSetup();
+    if (st.setup) return renderSetup(st);
     renderPeople(st.people);
   }
-  function renderSetup() {
+  function renderSetup(st) {
     const o = mount();
-    o.innerHTML = card(`<h2>Vitaj v Stribogu</h2><p>Najprv si vytvor svoj admin účet. Ostatných ľudí z tímu potom pridáš v sekcii <b>Prístupy</b>.</p>
-      <form id="sl-form"><label class="sl-f">Meno a priezvisko<input id="sl-name" autocomplete="name" required maxlength="60"></label>
+    if (st && st.imported && st.imported.length) return renderClaim(st.imported);
+    o.innerHTML = card(`<h2>Vitaj v Stribogu</h2><p>Aplikácia je zatiaľ prázdna. Ako chceš začať?</p>
+      <div class="sl-a" style="flex-direction:column"><button class="sl-btn pr" id="sl-new">Začať odznova – vytvoriť admin účet</button>
+      <label class="sl-btn" style="text-align:center">Preniesť dáta zo zálohy / z claude.ai<input type="file" accept=".json,application/json" id="sl-file" hidden></label></div>
+      <div class="sl-err" id="sl-err" style="margin-top:12px"></div>`);
+    o.querySelector("#sl-new").onclick = renderNewAdmin;
+    o.querySelector("#sl-file").onchange = async e => {
+      const f = e.target.files && e.target.files[0]; if (!f) return;
+      const er = o.querySelector("#sl-err");
+      er.style.color = "var(--muted,#5b6b69)"; er.textContent = "Nahrávam a obnovujem dáta… (pri veľa fotkách to môže trvať minútu)";
+      try {
+        let data; try { data = JSON.parse(await f.text()); } catch { throw new Error("Súbor nie je záloha Stribogu"); }
+        if (!data || typeof data.docs !== "object") throw new Error("Súbor nie je záloha Stribogu");
+        const r = await api("POST", "/api/auth/setup-import", data);
+        const st2 = await api("GET", "/api/auth/state");
+        if (st2.imported && st2.imported.length) renderClaim(st2.imported, r);
+        else renderNewAdmin(r);
+      } catch (x) { er.style.color = ""; er.textContent = x.message; }
+    };
+  }
+  function renderClaim(list, r) {
+    const o = mount();
+    o.innerHTML = card(`<h2>Kto z nich si ty?</h2><p>${r ? `Prenesené: ${r.docs} záznamov a ${r.blobs} fotiek. ` : ""}Vyber sa – staneš sa adminom a nastavíš si PIN. Ostatným nastavíš PIN v sekcii <b>Prístupy</b>.</p>
+      <div class="sl-people">${list.map(p => `<button class="sl-p" data-uid="${esc(p.id)}"><img alt="" src="${avatar(p.name, p.color)}"><span>${esc(p.name)}</span></button>`).join("")}</div>
+      <div class="sl-a" style="margin-top:12px"><button class="sl-btn" id="sl-none">Nie som v zozname</button></div>`);
+    o.querySelectorAll(".sl-p").forEach(b => (b.onclick = () => renderNewAdmin(null, list.find(p => p.id === b.dataset.uid), list)));
+    o.querySelector("#sl-none").onclick = () => renderNewAdmin(null, null, list);
+  }
+  function renderNewAdmin(r, who, list) {
+    const o = mount();
+    o.innerHTML = card(`${who ? `<div class="sl-who"><img alt="" src="${avatar(who.name, who.color)}"><div><b>${esc(who.name)}</b><p style="margin:0">Nastav si PIN – budeš admin</p></div></div>` : `<h2>Admin účet</h2><p>Ostatných ľudí z tímu potom pridáš v sekcii <b>Prístupy</b>.</p>`}
+      <form id="sl-form">${who ? "" : `<label class="sl-f">Meno a priezvisko<input id="sl-name" autocomplete="name" required maxlength="60"></label>`}
       <label class="sl-f">PIN (4–8 číslic)<input id="sl-pin" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
       <label class="sl-f">PIN ešte raz<input id="sl-pin2" class="pin" type="password" inputmode="numeric" pattern="[0-9]*" maxlength="8" autocomplete="new-password" required></label>
-      <div class="sl-err" id="sl-err"></div><div class="sl-a"><button class="sl-btn pr" type="submit">Vytvoriť a pokračovať</button></div></form>`);
-    o.querySelector("#sl-name").focus();
+      <div class="sl-err" id="sl-err"></div><div class="sl-a">${list ? `<button class="sl-btn" type="button" id="sl-back">Späť</button>` : ""}<button class="sl-btn pr" type="submit">Pokračovať</button></div></form>`);
+    const first = o.querySelector(who ? "#sl-pin" : "#sl-name"); first.focus();
+    const back = o.querySelector("#sl-back"); if (back) back.onclick = () => renderClaim(list);
     o.querySelector("#sl-form").onsubmit = async e => {
       e.preventDefault();
-      const name = o.querySelector("#sl-name").value.trim(), pin = o.querySelector("#sl-pin").value, pin2 = o.querySelector("#sl-pin2").value;
+      const pin = o.querySelector("#sl-pin").value, pin2 = o.querySelector("#sl-pin2").value;
       const er = o.querySelector("#sl-err");
       if (!/^\d{4,8}$/.test(pin)) return (er.textContent = "PIN musí mať 4–8 číslic");
       if (pin !== pin2) return (er.textContent = "PIN-y sa nezhodujú");
-      try { await api("POST", "/api/auth/setup", { name, pin }); await finish(); } catch (x) { er.textContent = x.message; }
+      const body = who ? { userId: who.id, pin } : { name: o.querySelector("#sl-name").value.trim(), pin };
+      try { await api("POST", "/api/auth/setup", body); await finish(); } catch (x) { er.textContent = x.message; }
     };
   }
   function renderPeople(list) {

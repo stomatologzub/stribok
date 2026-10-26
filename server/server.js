@@ -7,12 +7,12 @@ const http = require("node:http");
 const fs = require("node:fs");
 const path = require("node:path");
 const crypto = require("node:crypto");
-const { DatabaseSync } = require("node:sqlite");
+
+const store = require("./store");
+const { db, Q, DATA_DIR, BLOB_DIR, now, rid, parentOf, hashPin, validPin, cleanName, publicUser, validPath, addUser, setPin, saveBlob, importData, exportData } = store;
 
 const PORT = +process.env.PORT || 8080;
 const ROOT = path.resolve(__dirname, "..");
-const DATA_DIR = path.resolve(process.env.DATA_DIR || path.join(ROOT, "data"));
-const BLOB_DIR = path.join(DATA_DIR, "blobs");
 const AI_KEY = process.env.ANTHROPIC_API_KEY || "";
 const AI_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5";
 const COOKIE = "stribog_s";
@@ -20,56 +20,7 @@ const SESSION_DAYS = 180;
 const MAX_JSON = 8 * 1024 * 1024;
 const MAX_BLOB = 15 * 1024 * 1024;
 const MAX_AI = 60 * 1024 * 1024;
-fs.mkdirSync(BLOB_DIR, { recursive: true });
-
-/* ---------------- database ---------------- */
-const db = new DatabaseSync(path.join(DATA_DIR, "stribog.db"));
-db.exec(`
-PRAGMA journal_mode=WAL;
-CREATE TABLE IF NOT EXISTS docs(path TEXT PRIMARY KEY, parent TEXT NOT NULL, data TEXT NOT NULL, updated INTEGER NOT NULL);
-CREATE INDEX IF NOT EXISTS docs_parent ON docs(parent);
-CREATE TABLE IF NOT EXISTS users(id TEXT PRIMARY KEY, name TEXT NOT NULL, role TEXT NOT NULL, color TEXT NOT NULL,
-  salt TEXT NOT NULL, pin TEXT NOT NULL, active INTEGER NOT NULL DEFAULT 1, created INTEGER NOT NULL, last_login INTEGER,
-  fails INTEGER NOT NULL DEFAULT 0, locked_until INTEGER NOT NULL DEFAULT 0);
-CREATE TABLE IF NOT EXISTS sessions(token TEXT PRIMARY KEY, user_id TEXT NOT NULL, created INTEGER NOT NULL, expires INTEGER NOT NULL);
-CREATE TABLE IF NOT EXISTS blobs(id TEXT PRIMARY KEY, type TEXT NOT NULL, size INTEGER NOT NULL, by TEXT, created INTEGER NOT NULL);
-`);
-const Q = {
-  getDoc: db.prepare("SELECT data FROM docs WHERE path=?"),
-  listDocs: db.prepare("SELECT path,data FROM docs WHERE parent=?"),
-  putDoc: db.prepare("INSERT INTO docs(path,parent,data,updated) VALUES(?,?,?,?) ON CONFLICT(path) DO UPDATE SET data=excluded.data,updated=excluded.updated"),
-  delDoc: db.prepare("DELETE FROM docs WHERE path=?"),
-  allDocs: db.prepare("SELECT path,data FROM docs ORDER BY path"),
-  userById: db.prepare("SELECT * FROM users WHERE id=?"),
-  users: db.prepare("SELECT * FROM users ORDER BY role='admin' DESC, name COLLATE NOCASE"),
-  countAdmins: db.prepare("SELECT COUNT(*) n FROM users WHERE role='admin' AND active=1"),
-  countUsers: db.prepare("SELECT COUNT(*) n FROM users"),
-  addUser: db.prepare("INSERT INTO users(id,name,role,color,salt,pin,active,created) VALUES(?,?,?,?,?,?,1,?)"),
-  session: db.prepare("SELECT u.* FROM sessions s JOIN users u ON u.id=s.user_id WHERE s.token=? AND s.expires>? AND u.active=1"),
-  addSession: db.prepare("INSERT INTO sessions(token,user_id,created,expires) VALUES(?,?,?,?)"),
-  delSession: db.prepare("DELETE FROM sessions WHERE token=?"),
-  delUserSessions: db.prepare("DELETE FROM sessions WHERE user_id=?"),
-  addBlob: db.prepare("INSERT INTO blobs(id,type,size,by,created) VALUES(?,?,?,?,?)"),
-  getBlob: db.prepare("SELECT * FROM blobs WHERE id=?"),
-};
-db.prepare("DELETE FROM sessions WHERE expires<?").run(Date.now());
-
-/* ---------------- helpers ---------------- */
-const now = () => Date.now();
-const rid = (n = 20) => crypto.randomBytes(n).toString("base64url").replace(/[-_]/g, "").slice(0, n) || rid(n);
-const parentOf = p => p.split("/").slice(0, -1).join("/");
-const COLORS = ["#2BB3B1", "#0E6E6E", "#C2410C", "#7C3AED", "#2563EB", "#B45309", "#DB2777", "#15803D", "#4B5563", "#9333EA"];
-const hashPin = (pin, salt) => crypto.scryptSync(String(pin), salt, 32).toString("hex");
-const validPin = p => /^\d{4,8}$/.test(String(p || ""));
-const cleanName = n => String(n || "").replace(/\s+/g, " ").trim().slice(0, 60);
-const publicUser = u => ({ id: u.id, name: u.name, role: u.role, color: u.color, active: !!u.active });
-
-function validPath(p, wantDoc) {
-  if (typeof p !== "string" || !p || p.length > 400) return false;
-  const s = p.split("/");
-  if (s.some(x => !x || x === "." || x === ".." || x.length > 150)) return false;
-  return wantDoc ? s.length % 2 === 0 : s.length % 2 === 1;
-}
+const MAX_IMPORT = 400 * 1024 * 1024;
 
 /* Pravidlá prístupu – rovnaké ako v capabilities.json (najkonkrétnejšie pravidlo vyhráva).
    "team" = každý prihlásený, "admin" = rola admin. */
@@ -255,22 +206,50 @@ async function handle(req, res) {
   if (m === "GET" && p === "/shim.js") return send(res, 200, fs.readFileSync(path.join(__dirname, "shim.js")), { "Content-Type": MIME[".js"], "Cache-Control": "no-cache" });
 
   /* ---- auth (bez prihlásenia) ---- */
+  /* verejná stránka kalkulácie pre klienta (bez prihlásenia) */
+  const mk = p.match(/^\/k\/([A-Za-z0-9]{16,64})$/);
+  if (mk && m === "GET") {
+    const pg = Q.pubByToken.get(mk[1]);
+    if (!pg) return send(res, 404, "Stránka neexistuje alebo bola zrušená.");
+    return send(res, 200, pg.html, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache", "X-Robots-Tag": "noindex",
+      "Content-Security-Policy": "sandbox allow-popups allow-downloads; default-src 'none'; style-src 'unsafe-inline' https://fonts.googleapis.com; font-src https://fonts.gstatic.com; img-src data:" });
+  }
+
+  /* ---- auth (bez prihlásenia) ---- */
+  const needsSetup = () => Q.countActive.get().n === 0;
+  const startSession = (uid) => { const token = rid(40); Q.addSession.run(token, uid, now(), now() + SESSION_DAYS * 864e5); return { "Set-Cookie": sessionCookie(req, token, SESSION_DAYS * 86400) }; };
   if (p === "/api/auth/state" && m === "GET") {
     const user = currentUser(req);
-    const setup = Q.countUsers.get().n === 0;
-    const people = setup ? [] : Q.users.all().filter(u => u.active).map(u => ({ id: u.id, name: u.name, color: u.color }));
-    return send(res, 200, { setup, people, me: user ? publicUser(user) : null, ai: !!AI_KEY });
+    const setup = needsSetup();
+    const all = Q.users.all();
+    const people = all.filter(u => u.active).map(u => ({ id: u.id, name: u.name, color: u.color }));
+    // pri prvom spustení po prenose dát: ľudia zo zálohy, z ktorých si admin vyberie sám seba
+    const imported = setup ? all.map(u => ({ id: u.id, name: u.name, color: u.color, role: u.role })) : [];
+    return send(res, 200, { setup, people, imported, me: user ? publicUser(user) : null, ai: !!AI_KEY });
+  }
+  if (p === "/api/auth/setup-import" && m === "POST") {
+    if (!needsSetup()) return fail(res, 409, "already_setup", "Aplikácia už je nastavená – obnovu urob v sekcii Prístupy");
+    const b = await readJson(req, MAX_IMPORT);
+    const r = importData(b, { replace: true });
+    return send(res, 200, { ok: true, ...r });
   }
   if (p === "/api/auth/setup" && m === "POST") {
     const b = await readJson(req);
-    if (Q.countUsers.get().n > 0) return fail(res, 409, "already_setup", "Aplikácia už je nastavená");
-    const name = cleanName(b.name);
-    if (!name || !validPin(b.pin)) return fail(res, 400, "invalid_argument", "Zadaj meno a PIN (4–8 číslic)");
-    const id = "u_" + rid(12), salt = rid(16);
-    Q.addUser.run(id, name, "admin", COLORS[0], salt, hashPin(b.pin, salt), now());
-    const token = rid(40);
-    Q.addSession.run(token, id, now(), now() + SESSION_DAYS * 864e5);
-    return send(res, 200, { ok: true }, { "Set-Cookie": sessionCookie(req, token, SESSION_DAYS * 86400) });
+    if (!needsSetup()) return fail(res, 409, "already_setup", "Aplikácia už je nastavená");
+    if (!validPin(b.pin)) return fail(res, 400, "invalid_argument", "PIN musí mať 4–8 číslic");
+    let uid;
+    if (b.userId) {
+      const u = Q.userById.get(String(b.userId));
+      if (!u) return fail(res, 404, "not_found", "Človek sa nenašiel");
+      setPin(u.id, b.pin);
+      db.prepare("UPDATE users SET role='admin', active=1, last_login=? WHERE id=?").run(now(), u.id);
+      uid = u.id;
+    } else {
+      const name = cleanName(b.name);
+      if (!name) return fail(res, 400, "invalid_argument", "Zadaj meno");
+      uid = addUser({ name, role: "admin", pin: b.pin }).id;
+    }
+    return send(res, 200, { ok: true }, startSession(uid));
   }
   if (p === "/api/auth/login" && m === "POST") {
     const b = await readJson(req);
@@ -312,11 +291,9 @@ async function handle(req, res) {
       const b = await readJson(req);
       const name = cleanName(b.name), role = b.role === "admin" ? "admin" : "worker";
       if (!name || !validPin(b.pin)) return fail(res, 400, "invalid_argument", "Zadaj meno a PIN (4–8 číslic)");
-      const id = "u_" + rid(12), salt = rid(16);
-      Q.addUser.run(id, name, role, COLORS[Q.countUsers.get().n % COLORS.length], salt, hashPin(b.pin, salt), now());
-      return send(res, 200, publicUser(Q.userById.get(id)));
+      return send(res, 200, publicUser(addUser({ name, role, pin: b.pin })));
     }
-    let mu = p.match(/^\/api\/users\/([\w-]+)$/);
+    let mu = p.match(/^\/api\/users\/([A-Za-z0-9_.:@-]{1,80})$/);
     if (mu && (m === "PATCH" || m === "DELETE")) {
       const target = Q.userById.get(mu[1]);
       if (!target) return fail(res, 404, "not_found");
@@ -340,8 +317,7 @@ async function handle(req, res) {
       if (b.active !== undefined) { db.prepare("UPDATE users SET active=? WHERE id=?").run(b.active ? 1 : 0, target.id); if (!b.active) { Q.delUserSessions.run(target.id); kickUser(target.id); } }
       if (b.pin !== undefined) {
         if (!validPin(b.pin)) return fail(res, 400, "invalid_argument", "PIN musí mať 4–8 číslic");
-        const salt = rid(16);
-        db.prepare("UPDATE users SET salt=?, pin=?, fails=0, locked_until=0 WHERE id=?").run(salt, hashPin(b.pin, salt), target.id);
+        setPin(target.id, b.pin);
         if (!self) { Q.delUserSessions.run(target.id); kickUser(target.id); }
       }
       if (b.role !== undefined && !self) { Q.delUserSessions.run(target.id); kickUser(target.id); }
@@ -351,23 +327,35 @@ async function handle(req, res) {
     /* ---- záloha / obnova (admin) ---- */
     if (p === "/api/admin/export" && m === "GET") {
       if (user.role !== "admin") return fail(res, 403, "permission_denied");
-      const docs = {}; for (const r of Q.allDocs.all()) docs[r.path] = JSON.parse(r.data);
-      return send(res, 200, { app: "stribog", version: 1, exportedAt: new Date().toISOString(), docs }, { "Content-Disposition": `attachment; filename="stribog-zaloha-${new Date().toISOString().slice(0, 10)}.json"` });
+      const withBlobs = url.searchParams.get("photos") === "1";
+      const day = new Date().toISOString().slice(0, 10);
+      return send(res, 200, exportData({ blobs: withBlobs }), { "Content-Disposition": `attachment; filename="stribog-zaloha-${day}${withBlobs ? "-s-fotkami" : ""}.json"` });
     }
     if (p === "/api/admin/import" && m === "POST") {
       if (user.role !== "admin") return fail(res, 403, "permission_denied");
-      const b = await readJson(req, 64 * 1024 * 1024);
-      const docs = b.docs && typeof b.docs === "object" ? b.docs : null;
-      if (!docs) return fail(res, 400, "invalid_argument", "Súbor neobsahuje dáta aplikácie");
-      let n = 0;
-      db.exec("BEGIN");
-      try {
-        if (b.replace) db.exec("DELETE FROM docs");
-        for (const [k, v] of Object.entries(docs)) { if (validPath(k, true) && v && typeof v === "object") { Q.putDoc.run(k, parentOf(k), JSON.stringify(v), now()); n++; } }
-        db.exec("COMMIT");
-      } catch (e) { db.exec("ROLLBACK"); throw e; }
+      const b = await readJson(req, MAX_IMPORT);
+      const r = importData(b, { replace: !!b.replace });
       for (const c of clients) c.res.write(`data: ${JSON.stringify({ reload: true })}\n\n`);
-      return send(res, 200, { ok: true, count: n });
+      return send(res, 200, { ok: true, count: r.docs, ...r });
+    }
+
+    /* ---- verejný odkaz pre klienta (admin) ---- */
+    if (p === "/api/public" && m === "GET") {
+      if (user.role !== "admin") return fail(res, 403, "permission_denied");
+      const pg = Q.pubByProject.get(String(url.searchParams.get("projectId") || ""));
+      return send(res, 200, pg ? { url: "/k/" + pg.token, updated: pg.updated } : { url: null });
+    }
+    if (p === "/api/public" && (m === "POST" || m === "DELETE")) {
+      if (user.role !== "admin") return fail(res, 403, "permission_denied");
+      const b = await readJson(req);
+      const pid = String(b.projectId || "");
+      if (!pid || pid.length > 150) return fail(res, 400, "invalid_argument");
+      if (m === "DELETE") { db.prepare("DELETE FROM pubpages WHERE project_id=?").run(pid); return send(res, 200, { ok: true }); }
+      if (typeof b.html !== "string" || !b.html) return fail(res, 400, "invalid_argument");
+      const cur = Q.pubByProject.get(pid);
+      const token = cur ? cur.token : rid(24);
+      Q.putPub.run(pid, token, b.html, now(), user.id);
+      return send(res, 200, { url: "/k/" + token, updated: now() });
     }
 
     /* ---- realtime ---- */
@@ -416,11 +404,10 @@ async function handle(req, res) {
       const buf = await readBody(req, MAX_BLOB);
       if (!buf.length) return fail(res, 400, "invalid_argument");
       const id = crypto.randomBytes(16).toString("hex");
-      fs.writeFileSync(path.join(BLOB_DIR, id), buf);
-      Q.addBlob.run(id, type, buf.length, user.id, now());
+      saveBlob(id, type, buf, user.id);
       return send(res, 200, { id, url: "/_blob/" + id, sizeBytes: buf.length, contentType: type });
     }
-    const mb = p.match(/^\/_blob\/([0-9a-f]{32})$/);
+    const mb = p.match(/^\/_blob\/([A-Za-z0-9_-]{8,64})$/);
     if (mb && m === "GET") {
       const meta = Q.getBlob.get(mb[1]);
       const f = path.join(BLOB_DIR, mb[1]);

@@ -29,5 +29,6 @@
   profiles:async(ids)=>{const o={};[].concat(ids).forEach(i=>o[i]=P[i]||{id:i,name:'',avatarUrl:av('#999'),color:'#999',email:null,isMe:false,guest:false});return o},
   search:async(q)=>Object.values(P).filter(p=>!q||p.name.toLowerCase().includes(q.toLowerCase()))};
  const assets={upload:async(b)=>({id:'a'.repeat(32),url:'/_blob/x',sizeBytes:b.size,contentType:'image/jpeg'})};
- window.claude={use:async(n)=>({db,user,assets,downloads:null,comments:null}[n]??null)};
+ const downloads={save:async({filename,data})=>{window.__download={filename,data};const a=document.createElement('a');a.href=URL.createObjectURL(new Blob([data]));a.download=filename;a.click();return {saved:true}}};
+ window.claude={use:async(n)=>({db,user,assets,downloads,comments:null}[n]??null)};
 })();
