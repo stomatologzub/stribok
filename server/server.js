@@ -1,6 +1,6 @@
 /* Stribog – backend
    Node.js 22+ bez externých závislostí: HTTP server, SQLite (node:sqlite), realtime cez SSE,
-   prihlásenie menom + PIN-om, fotky na disku, voliteľne čítanie súpisu z fotiek cez Claude API.
+   prihlásenie menom + PIN-om, fotky na disku, voliteľne čítanie súpisu z fotiek cez Anthropic API.
    Premenné prostredia: PORT, DATA_DIR, ANTHROPIC_API_KEY, ANTHROPIC_MODEL, COOKIE_SECURE */
 "use strict";
 const http = require("node:http");
@@ -15,6 +15,7 @@ const PORT = +process.env.PORT || 8080;
 const ROOT = path.resolve(__dirname, "..");
 const AI_KEY = process.env.ANTHROPIC_API_KEY || "";
 const AI_MODEL = process.env.ANTHROPIC_MODEL || "claude-sonnet-5-5";
+const AI_URL = (process.env.ANTHROPIC_BASE_URL || "https://api.anthropic.com").replace(/\/$/, "") + "/v1/messages";
 const COOKIE = "stribog_s";
 const SESSION_DAYS = 180;
 const MAX_JSON = 8 * 1024 * 1024;
@@ -145,26 +146,16 @@ function deepMerge(base, patch) {
 }
 
 /* ---------------- static ---------------- */
-const MIME = { ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
-let indexCache = null, indexMtime = 0;
+const MIME = { ".woff2": "font/woff2", ".txt": "text/plain; charset=utf-8", ".html": "text/html; charset=utf-8", ".js": "text/javascript; charset=utf-8", ".css": "text/css; charset=utf-8", ".json": "application/json", ".svg": "image/svg+xml", ".png": "image/png", ".webmanifest": "application/manifest+json", ".ico": "image/x-icon" };
 function serveIndex(res) {
-  const f = path.join(ROOT, "index.html");
-  const st = fs.statSync(f);
-  if (!indexCache || st.mtimeMs !== indexMtime) {
-    const html = fs.readFileSync(f, "utf8");
-    const inject = `<meta name="theme-color" content="#0E6E6E"><link rel="manifest" href="/manifest.webmanifest"><link rel="icon" href="/icon.svg"><link rel="apple-touch-icon" href="/icon-180.png"><meta name="apple-mobile-web-app-capable" content="yes"><script src="/shim.js"></script>`;
-    // index.html je fragment (tak ho zverejňuje claude.ai) – doplníme hlavičku dokumentu
-    indexCache = /^\s*(<!doctype[^>]*>\s*)?<html[\s>]/i.test(html)
-      ? html.replace(/<head([^>]*)>/i, m => m + inject)
-      : `<!doctype html><html lang="sk"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">${inject}\n${html}`;
-    indexMtime = st.mtimeMs;
-  }
-  send(res, 200, indexCache, { "Content-Type": MIME[".html"], "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" });
+  send(res, 200, fs.readFileSync(path.join(ROOT, "index.html")), { "Content-Type": MIME[".html"], "Cache-Control": "no-cache", "X-Content-Type-Options": "nosniff", "Referrer-Policy": "same-origin" });
 }
 function serveStatic(res, rel) {
   const f = path.join(ROOT, "public", rel);
   if (!f.startsWith(path.join(ROOT, "public") + path.sep) || !fs.existsSync(f) || !fs.statSync(f).isFile()) return false;
-  send(res, 200, fs.readFileSync(f), { "Content-Type": MIME[path.extname(f)] || "application/octet-stream", "Cache-Control": "public, max-age=300" });
+  const ext = path.extname(f);
+  const cache = /^(vendor|fonts)\//.test(rel) ? "public, max-age=604800" : "no-cache"; // knižnice a písma sa nemenia
+  send(res, 200, fs.readFileSync(f), { "Content-Type": MIME[ext] || "application/octet-stream", "Cache-Control": cache, "X-Content-Type-Options": "nosniff" });
   return true;
 }
 
@@ -181,7 +172,7 @@ async function aiSample(body, signal) {
     content.push({ type: "image", source: { type: "base64", media_type: im.type, data: im.data } });
   }
   content.push({ type: "text", text: String(body.prompt || "") });
-  const r = await fetch("https://api.anthropic.com/v1/messages", {
+  const r = await fetch(AI_URL, {
     method: "POST", signal,
     headers: { "content-type": "application/json", "x-api-key": AI_KEY, "anthropic-version": "2023-06-01" },
     body: JSON.stringify({ model: AI_MODEL, max_tokens: 16000, messages: [{ role: "user", content }] }),
@@ -203,7 +194,6 @@ async function handle(req, res) {
 
   if (p === "/healthz") return send(res, 200, "ok");
   if (m === "GET" && (p === "/" || p === "/index.html")) return serveIndex(res);
-  if (m === "GET" && p === "/shim.js") return send(res, 200, fs.readFileSync(path.join(__dirname, "shim.js")), { "Content-Type": MIME[".js"], "Cache-Control": "no-cache" });
 
   /* ---- auth (bez prihlásenia) ---- */
   /* verejná stránka kalkulácie pre klienta (bez prihlásenia) */

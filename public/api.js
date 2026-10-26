@@ -1,6 +1,12 @@
-/* Stribog – klient pre vlastný server.
-   Poskytuje rovnaké rozhranie ako runtime claude.ai (window.claude.use: db, user, assets, downloads, sample)
-   a navyše "team" (správa ľudí a PIN-ov). Pred spustením aplikácie zobrazí prihlásenie menom + PIN-om. */
+/* Stribog – klientske API (window.stribog).
+   Načítava sa v <head> pred skriptom aplikácie. Aplikácia si cez window.stribog.use(názov) vypýta služby:
+     db        – dokumenty a kolekcie (Firestore-like: doc/collection/get/set/update/delete/add/onSnapshot)
+     user      – prihlásený človek, mená a avatary kolegov
+     assets    – nahrávanie fotiek (zobrazujú sa cez /_blob/<id>)
+     downloads – stiahnutie súboru (xlsx, csv, html)
+     sample    – čítanie súpisu z fotiek cez AI (len admin a len ak má server ANTHROPIC_API_KEY)
+     team      – správa ľudí, PIN-ov, záloha/obnova, verejné odkazy pre klienta, odhlásenie
+   use() počká, kým sa človek prihlási. Prihlasovaciu obrazovku (meno + PIN, prvý admin) kreslí tento súbor. */
 (() => {
   "use strict";
   const clone = o => (o == null ? o : JSON.parse(JSON.stringify(o)));
@@ -178,7 +184,7 @@
   let readyResolve;
   const ready = new Promise(r => (readyResolve = r));
   const caps = { db: dbCap, user: userCap, assets: assetsCap, downloads: downloadsCap, team: teamCap };
-  window.claude = {
+  window.stribog = {
     use: async name => {
       await ready;
       if (name === "sample") return me && me.role === "admin" && aiOn ? sampleCap : null;
@@ -244,7 +250,7 @@
     if (st && st.imported && st.imported.length) return renderClaim(st.imported);
     o.innerHTML = card(`<h2>Vitaj v Stribogu</h2><p>Aplikácia je zatiaľ prázdna. Ako chceš začať?</p>
       <div class="sl-a" style="flex-direction:column"><button class="sl-btn pr" id="sl-new">Začať odznova – vytvoriť admin účet</button>
-      <label class="sl-btn" style="text-align:center">Preniesť dáta zo zálohy / z claude.ai<input type="file" accept=".json,application/json" id="sl-file" hidden></label></div>
+      <label class="sl-btn" style="text-align:center">Obnoviť dáta zo zálohy<input type="file" accept=".json,application/json" id="sl-file" hidden></label></div>
       <div class="sl-err" id="sl-err" style="margin-top:12px"></div>`);
     o.querySelector("#sl-new").onclick = renderNewAdmin;
     o.querySelector("#sl-file").onchange = async e => {
