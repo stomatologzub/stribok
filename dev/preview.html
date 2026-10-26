@@ -1,0 +1,12 @@
+<!doctype html>
+<meta charset="utf-8">
+<title>Stribog – lokálny náhľad</title>
+<!-- Spusti cez lokálny server (napr. `python3 -m http.server` v koreňovom priečinku) a otvor /dev/preview.html
+     ?role=worker → zobrazenie ako technik -->
+<script>
+fetch("../index.html").then(r=>r.text()).then(t=>{
+  document.open();
+  document.write('<!doctype html><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><script src="mock.js"><\/script><script src="demo-data.js"><\/script>'+t);
+  document.close();
+});
+</script>
