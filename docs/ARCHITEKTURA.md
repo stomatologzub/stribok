@@ -22,7 +22,7 @@
 | `admin/<projectId>` | celý súpis projektu: `project`, `rate`, `rounding`, `prices[]`, `groups[]` (sheet `rek`/`stu`/`str`, `rows[]`), `recapHand`, `recapUse`, `issues[]` | admin | admin |
 | `admin/_summary` | `projects.<id>`: `total`, `rek`, `stu`, `str`, počty, `need`, `issues`, `updatedAt` | admin | admin |
 | `admin/_technicians` | `list[]`: meno, kontakt, pozícia, `certs[]` (názov, platnosť), `userId` | admin | admin |
-| `meta/projects` | `list[]`: `id`, `name`, `code`, `client`, `archived` | tím | admin |
+| `meta/projects` | `list[]`: `id`, `name`, `code`, `client`, `archived`, `cat` (`montaz` / `servis` / `vyjazd`, chýbajúce = montáž) | tím | admin |
 | `meta/customers`, `meta/objects`, `meta/procedures` | evidencia (`list[]`) | tím | admin |
 | `meta/chat` | poradie, skryté a vlastné kanály | tím | admin |
 | `tasks/<id>` | `title`, `projectId`, `groupId`, `objectId`, `procedureId`, `status` (todo/doing/done), `assignee`, `techId`, `techName`, `due`, `estH`, `checks`, `photos[]` (`kind`: "" / `proof` / `step:<k>`), `proofReq`, `proof`, `review` | tím | tím |

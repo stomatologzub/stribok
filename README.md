@@ -3,7 +3,7 @@
 Interná aplikácia tímu Stribog (vzduchotechnika · rekuperácia · klíma). Beží na **vlastnom serveri**, dáta a fotky ukladá u vás a prihlasuje sa **menom a PIN-om**. Žiadny účet Claude ani claude.ai nepotrebuje.
 
 **Funkcie:**
-- **Projekty, súpisy, cenníky a kalkulácie** – súpis aj z fotiek cez AI (voliteľné), import z CSV
+- **Projekty, súpisy, cenníky a kalkulácie** – rozdelené na **Montáž**, **Servis a revízia** a **Servisný výjazd**; súpis aj z fotiek cez AI (voliteľné), import z CSV
 - **Úlohy** – checklisty, firemné postupy, fotodôkazy s pečiatkou, kontrola adminom, odhad hodín
 - **Dochádzka** – príchod/odchod, prehľad tímu, export do .xlsx
 - **Evidencia** – zákazníci, objekty, technici a ich oprávnenia

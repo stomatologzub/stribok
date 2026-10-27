@@ -604,6 +604,22 @@ body.game .bsheet,body.game .card,body.game .sheet-bg{color-scheme:dark}
 .stb{font-size:10.5px;font-weight:700;letter-spacing:.07em;text-transform:uppercase;padding:2px 8px;border-radius:999px;background:var(--line-soft);color:var(--muted)}
 .stb.active{background:var(--accent-soft);color:var(--accent)}
 .stb.new{background:var(--ok-soft);color:var(--ok)}
+/* druh projektu */
+.pcat{display:inline-flex;align-items:center;font-size:10.5px;font-weight:700;letter-spacing:.04em;padding:2px 8px;border-radius:999px;white-space:nowrap;margin-right:6px;--c:#0E6E6E;--bg:rgba(43,179,177,.16);color:var(--c);background:var(--bg)}
+.pcat-servis{--c:#4338CA;--bg:rgba(99,102,241,.15)}
+.pcat-vyjazd{--c:#B45309;--bg:rgba(245,158,11,.18)}
+@media (prefers-color-scheme:dark){:root:not([data-theme="light"]) .pcat-montaz{--c:#5FD3CC}:root:not([data-theme="light"]) .pcat-servis{--c:#A5B4FC}:root:not([data-theme="light"]) .pcat-vyjazd{--c:#FBBF24}}
+.pcat-tabs{margin-bottom:10px}
+.pcat-tabs .pg-n{margin-left:2px}
+.pcat-pick{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:8px}
+.pcat-opt{display:flex;align-items:center;gap:8px;padding:11px 12px;border-radius:12px;border:1.5px solid var(--line);background:var(--field);cursor:pointer;font-weight:600;font-size:13.5px;min-width:0}
+.pcat-opt input{position:absolute;opacity:0;pointer-events:none}
+.pcat-opt svg{width:18px;height:18px;flex:none;color:var(--c,var(--accent))}
+.pcat-opt span{overflow:hidden;text-overflow:ellipsis}
+.pcat-opt.pcat-montaz{--c:#0E6E6E}.pcat-opt.pcat-servis{--c:#4338CA}.pcat-opt.pcat-vyjazd{--c:#B45309}
+.pcat-opt:has(input:checked){border-color:var(--c);background:color-mix(in srgb,var(--c) 10%,var(--field));box-shadow:0 0 0 3px color-mix(in srgb,var(--c) 15%,transparent)}
+.pcat-opt:has(input:focus-visible){outline:2px solid var(--gold);outline-offset:2px}
+@media (max-width:560px){.pcat-pick{grid-template-columns:1fr}}
 .tl-prog{display:flex;align-items:center;gap:10px}
 .tl-prog i{flex:1;height:6px;border-radius:3px;background:var(--line-soft);overflow:hidden}
 .tl-prog em{display:block;height:100%;border-radius:3px;background:linear-gradient(90deg,var(--gold),var(--accent))}
@@ -1938,19 +1954,26 @@ function tlNode({p,a},compact){
     <span class="tl-dot"></span>
     <span class="tl-c">
       <span class="tl-top"><span class="tl-n">${esc(p.name)}</span><span class="tl-t">${a.total!=null?eur(a.total):"–"}</span></span>
-      <span class="tl-meta"><span class="stb ${st}">${stL}</span>${esc([p.code&&("zákazka "+p.code),p.client].filter(Boolean).join(" · ")||"bez čísla zákazky")}</span>
+      <span class="tl-meta">${pcatBadge(p)}<span class="stb ${st}">${stL}</span>${esc([p.code&&("zákazka "+p.code),p.client].filter(Boolean).join(" · ")||"bez čísla zákazky")}</span>
       ${compact?"":`<span class="tl-prog"><i><em style="width:${pct}%"></em></i><span>${a.tasks?`${a.done}/${a.tasks} úloh hotových`:"zatiaľ bez úloh"}</span></span>`}
       ${chips.length?`<span class="tl-chips">${chips.join("")}</span>`:""}
     </span></button>`;
 }
-let projSort="recent", projView="timeline", projQ="";
-try{projSort=localStorage.getItem("stribog-psort")||"recent";projView=localStorage.getItem("stribog-pview2")||"table"}catch(_){}
+let projSort="recent", projView="timeline", projQ="", projCat="";
+/* druh projektu – uložený v meta/projects (vidí ho celý tím); staré projekty bez druhu = montáž */
+const PCATS=[["montaz","Montáž","i-build"],["servis","Servis a revízia","i-check"],["vyjazd","Servisný výjazd","i-pin"]];
+const pcat=p=>(p&&PCATS.some(c=>c[0]===p.cat))?p.cat:"montaz";
+const pcatLbl=k=>(PCATS.find(c=>c[0]===k)||PCATS[0])[1];
+const pcatBadge=p=>`<span class="pcat pcat-${pcat(p)}">${esc(pcatLbl(pcat(p)))}</span>`;
+const pcatPick=(id,cur)=>`<div class="fld"><span>Druh projektu</span><div class="pcat-pick" role="radiogroup">${PCATS.map(([k,l,ic])=>`<label class="pcat-opt pcat-${k}"><input type="radio" name="${id}" value="${k}"${(cur||"montaz")===k?" checked":""}>${svgUse(ic)}<span>${l}</span></label>`).join("")}</div></div>`;
+const pcatVal=id=>{const r=document.querySelector(`input[name="${id}"]:checked`);return r?r.value:"montaz"};
+try{projSort=localStorage.getItem("stribog-psort")||"recent";projView=localStorage.getItem("stribog-pview2")||"table";projCat=localStorage.getItem("stribog-pcat")||""}catch(_){}
 function renderProjects(){
   let h=`<div class="hello"><div><div class="d">Admin</div><h2>Projekty</h2></div><div class="actions">${sampleImgMax?`<button class="btn gold" data-tact="fromphotos">${svgUse("i-cam")}Nový súpis z fotiek</button>`:""}<button class="btn" data-csv="open">${svgUse("i-sheet")}Import z CSV</button><button class="btn primary" data-tact="newproj">${svgUse("i-plus")}Nový projekt</button></div></div>`;
   if(!metaLoaded){$("#team").innerHTML=h+`<p class="loading">Načítavam projekty…</p>`;return}
   if(!projects.length){$("#team").innerHTML=h+`<div class="empty"><b>Zatiaľ žiadny projekt</b>Založ prvý tlačidlom Nový projekt – dostane vlastný súpis, cenník a kalkuláciu pre klienta.</div>`;return}
   const sorts=[["recent","Posledná zmena"],["name","Názov A–Z"],["total","Najvyššia suma"],["due","Najbližší termín"]];
-  h+=`<div id="projSum"></div>
+  h+=`<div class="rtabs pcat-tabs" role="group" aria-label="Druh projektu" id="projCats"></div><div id="projSum"></div>
     <div class="rbar"><label class="rsearch">${svgUse("i-search")}<input id="projQ" type="search" placeholder="Hľadať projekt, zákazku, klienta…" value="${esc(projQ)}" autocomplete="off"></label>
       <div class="rfilters"><label class="rf"><span>Zoradiť</span><select id="projSort">${sorts.map(([k,l])=>`<option value="${k}"${projSort===k?" selected":""}>${l}</option>`).join("")}</select></label>
       <div class="seg" role="group" aria-label="Zobrazenie">${[["table","Tabuľka"],["timeline","Timeline"]].map(([k,l])=>`<button data-pview="${k}" aria-pressed="${projView===k}">${l}</button>`).join("")}</div></div></div>
@@ -1959,7 +1982,10 @@ function renderProjects(){
 }
 function renderProjList(){
   const box=$("#projList");if(!box)return;
-  const rows=projects.map(p=>({p,a:projActivity(p)})).filter(r=>hit(projQ,r.p.name,r.p.code,r.p.client));
+  const all=projects.map(p=>({p,a:projActivity(p)})).filter(r=>hit(projQ,r.p.name,r.p.code,r.p.client,pcatLbl(pcat(r.p))));
+  const ct=$("#projCats");if(ct){const cnt=k=>all.filter(r=>!r.p.archived&&(!k||pcat(r.p)===k)).length;
+    ct.innerHTML=[["","Všetky","i-sheet"],...PCATS].map(([k,l,ic])=>`<button data-pcat="${k}" aria-pressed="${projCat===k}">${svgUse(ic)}<span>${l}</span><span class="pg-n">${cnt(k)}</span></button>`).join("")}
+  const rows=all.filter(r=>!projCat||pcat(r.p)===projCat);
   const live=rows.filter(r=>!r.p.archived);
   const sum=live.reduce((t,r)=>t+(r.a.total||0),0), openT=live.reduce((t,r)=>t+r.a.open,0), hrsAll=live.reduce((t,r)=>t+r.a.mins,0);
   const sb=$("#projSum");if(sb)sb.innerHTML=`<div class="tl-sum"><span class="chip2"><b>${live.length}</b> ${live.length===1?"aktívny projekt":live.length>=2&&live.length<=4?"aktívne projekty":"aktívnych projektov"}</span><span class="chip2">spolu <b>${eur(sum)}</b></span><span class="chip2"><b>${openT}</b> otvorených úloh</span>${hrsAll?`<span class="chip2"><b>${hrs(hrsAll)}</b> odpracované</span>`:""}</div>`;
@@ -1970,7 +1996,7 @@ function renderProjList(){
     {k:"new",t:"Nové – prázdny súpis",d:"zatiaľ bez súm, úloh aj hodín",items:live.filter(isEmpty).sort(cmp),compact:true},
     {k:"arch",t:"Archív",items:rows.filter(r=>r.p.archived).sort(cmp),arch:true}
   ].filter(g=>g.items.length);
-  if(!groups.length){box.innerHTML=`<div class="empty"><b>Nič nezodpovedá hľadaniu</b>Skús iný názov alebo číslo zákazky.</div>`;return}
+  if(!groups.length){box.innerHTML=projCat&&!projQ?`<div class="empty"><b>Žiadny projekt typu ${esc(pcatLbl(projCat))}</b>Nový založíš tlačidlom Nový projekt – druh vyberieš pri zakladaní alebo neskôr v nastaveniach projektu.</div>`:`<div class="empty"><b>Nič nezodpovedá hľadaniu</b>Skús iný názov alebo číslo zákazky.</div>`;return}
   const gh=g=>`<div class="pg-h${g.arch?" arch":""}"><div><b>${g.t}</b><span class="pg-n">${g.items.length}</span></div>${g.d?`<small>${g.d}</small>`:""}${g.items.some(r=>r.a.total>0)?`<span class="pg-sum">${eur(g.items.reduce((t,r)=>t+(r.a.total||0),0))}</span>`:""}</div>`;
   const body=g=>projView==="table"?ptable(g.items):`<div class="tl${g.compact?" compact":""}">${g.items.map(r=>tlNode(r,g.compact)).join("")}</div>`;
   box.innerHTML=groups.map(g=>g.arch?`<details class="pgroup"${projQ?" open":""}><summary>${gh(g)}</summary>${body(g)}</details>`:`<section class="pgroup">${gh(g)}${g.compact?`<p class="note-p">Prázdne alebo testovacie projekty môžeš skryť: otvor projekt → Nastavenia → Archivovať.</p>`:""}${body(g)}</section>`).join("");
@@ -1986,7 +2012,7 @@ function ptable(items){
     const stL={arch:"archív",new:"nový",active:"aktívny",idle:"bez pohybu"}[st];
     const chk=m.v!==2?`<small>–</small>`:(m.need||m.issues)?`${m.need?`<span class="cert warn">${m.need} na doplnenie</span>`:""}${m.issues?`<span class="cert">${m.issues} ${pl(m.issues,"nezrovnalosť","nezrovnalosti","nezrovnalostí")}</span>`:""}`:(m.total>0?`<span class="cert okc">súpis kompletný</span>`:`<small>–</small>`);
     return `<button class="prow" data-tact="openproj" data-id="${esc(p.id)}">
-      <span class="c-n"><b>${esc(p.name)}</b><small><span class="stb ${st==="active"?"active":st==="new"?"new":""}">${stL}</span>${esc([p.code&&("zák. "+p.code),p.client].filter(Boolean).join(" · ")||"bez čísla zákazky")}</small></span>
+      <span class="c-n"><b>${esc(p.name)}</b><small>${pcatBadge(p)}<span class="stb ${st==="active"?"active":st==="new"?"new":""}">${stL}</span>${esc([p.code&&("zák. "+p.code),p.client].filter(Boolean).join(" · ")||"bez čísla zákazky")}</small></span>
       <span class="c-k">${chk}</span>
       <span class="c-t">${a.tasks?`<i><em style="width:${pct}%"></em></i><small>${a.done}/${a.tasks} hotových${a.next?` · <span class="${late?"late":""}">${late?"po termíne":"do"} ${skDate(a.next).replace(/ \d{4}$/,"")}</span>`:""}</small>`:`<small>bez úloh</small>`}</span>
       <span class="c-h">${a.mins?hrs(a.mins):"–"}</span>
@@ -1997,6 +2023,7 @@ function ptable(items){
 }
 document.addEventListener("input",e=>{if(e.target.id==="projQ"){projQ=e.target.value;renderProjList()}});
 document.addEventListener("change",e=>{if(e.target.id==="projSort"){projSort=e.target.value;try{localStorage.setItem("stribog-psort",projSort)}catch(_){}renderProjList()}});
+document.addEventListener("click",e=>{const b=e.target.closest("[data-pcat]");if(!b)return;projCat=b.dataset.pcat;try{localStorage.setItem("stribog-pcat",projCat)}catch(_){}renderProjList()});
 document.addEventListener("click",e=>{const b=e.target.closest("[data-pview]");if(!b)return;projView=b.dataset.pview;try{localStorage.setItem("stribog-pview2",projView)}catch(_){}
   document.querySelectorAll("[data-pview]").forEach(x=>x.setAttribute("aria-pressed",String(x===b)));renderProjList()});
 const openTaskCount=pid=>tasks.filter(t=>t.projectId===pid&&t.status!=="done").length;
@@ -2022,35 +2049,36 @@ async function openProject(pid){
   if(doneN&&!readOnly){S.issues=S.issues.filter(i=>!i.done);changed();toast(doneN===1?"Odstránená 1 vybavená nezrovnalosť":doneN<5?`Odstránené ${doneN} vybavené nezrovnalosti`:`Odstránených ${doneN} vybavených nezrovnalostí`)}
   render();window.scrollTo(0,0);
 }
-function setProjTitle(){$("#projTitle").textContent=S.project.name||"Projekt";const t=[S.project.code&&("zákazka "+S.project.code),S.project.client].filter(Boolean).join(" · ");$("#projSub").textContent=t;$("#projSubChip").hidden=!t}
+function setProjTitle(){$("#projTitle").textContent=S.project.name||"Projekt";const t=[pcatLbl(pcat(projects.find(p=>p.id===proj)||S.project)),S.project.code&&("zákazka "+S.project.code),S.project.client].filter(Boolean).join(" · ");$("#projSub").textContent=t;$("#projSubChip").hidden=!t}
 function closeProject(silent){if(proj&&dirty)flushSave();proj=null;S=null;if(!silent){renderShell();renderProjects()}}
 function newProjectSheet(){
   openSheet(`<div class="grab"></div><h3>Nový projekt</h3>
    <label class="fld"><span>Názov projektu</span><input class="f" id="np-name" placeholder="napr. Rezidencia Dunaj" autocomplete="off"></label>
    <div class="row2"><label class="fld"><span>Číslo zákazky</span><input class="f" id="np-code" placeholder="napr. 5401/00"></label>
    <label class="fld"><span>Klient</span><input class="f" id="np-client" placeholder="nepovinné"></label></div>
+   ${pcatPick("np-cat",projCat||"montaz")}
    <p class="note-p">Projekt dostane prázdny súpis (rekuperácie, stúpačky, strechy) a cenník skopírovaný z posledného projektu.</p>
    <div class="sheet-a"><button class="btn" data-sact="close">Zrušiť</button><button class="btn primary" data-sact="createproj">Založiť projekt</button></div>`);
   setTimeout(()=>$("#np-name").focus(),50);
 }
 async function createProject(){
   const name=$("#np-name").value.trim();if(!name){$("#np-name").focus();toast("Zadaj názov projektu");return}
-  const code=$("#np-code").value.trim(),client=$("#np-client").value.trim();
+  const code=$("#np-code").value.trim(),client=$("#np-client").value.trim(),cat=pcatVal("np-cat");
   let base=(name.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"projekt").slice(0,40);
   let id=base,k=2;while(projects.some(p=>p.id===id))id=base+"-"+(k++);
   let prices=DEFAULT_PRICES;
   try{const last=projects.slice().sort((a,b)=>((summary[b.id]||{}).updatedAt||0)-((summary[a.id]||{}).updatedAt||0))[0];
     if(last){const s=await dbApi.doc("admin/"+last.id).get();if(s.exists&&Array.isArray(s.data().prices))prices=s.data().prices}}catch(_){}
-  const state={version:1,project:{name,code,client},rate:18,rounding:"group",prices:JSON.parse(JSON.stringify(prices)),groups:[],recapHand:{stuB:null,stuAll:null},recapUse:{},issues:[]};
+  const state={version:1,project:{name,code,client,cat},rate:18,rounding:"group",prices:JSON.parse(JSON.stringify(prices)),groups:[],recapHand:{stuB:null,stuAll:null},recapUse:{},issues:[]};
   try{
     await dbApi.doc("admin/"+id).set(state);
-    await saveMeta([...projects,{id,name,code,client,archived:false}]);
+    await saveMeta([...projects,{id,name,code,client,archived:false,cat}]);
     await saveSummary(id,0);
   }catch(err){toast(err&&err.code==="quota_exceeded"?"Úložisko je plné":"Projekt sa nepodarilo založiť");return}
   closeSheet();toast("Projekt založený");openProject(id);
 }
 /* project names are readable by the whole team (meta); money stays in admin/_summary */
-async function saveMeta(list){projects=list.map(({id,name,code,client,archived})=>({id,name,code:code||"",client:client||"",archived:!!archived}));await dbApi.doc("meta/projects").set({list:projects})}
+async function saveMeta(list){projects=list.map(({id,name,code,client,archived,cat})=>({id,name,code:code||"",client:client||"",archived:!!archived,cat:pcat({cat})}));await dbApi.doc("meta/projects").set({list:projects})}
 async function saveSummary(pid,total,extra){summary={...summary,[pid]:{...(extra||{}),total,updatedAt:Date.now()}};await dbApi.doc("admin/_summary").set({projects:summary})}
 /* per-project breakdown for the projects table (computed from the open súpis S) */
 const SUM_KEYS=["total","rek","stu","str","nRek","nStu","nStr","need","issues"];
@@ -2080,7 +2108,7 @@ async function syncMetaFromS(){
   if(!proj||!S)return;
   const pid=proj,det=summaryOf(),total=det.total;
   const cur=projects.find(p=>p.id===pid);
-  const nu={id:pid,name:S.project.name,code:S.project.code||"",client:S.project.client||"",archived:cur?!!cur.archived:false};
+  const nu={id:pid,name:S.project.name,code:S.project.code||"",client:S.project.client||"",archived:cur?!!cur.archived:false,cat:cur?pcat(cur):pcat(S.project)};
   const sm=summary[pid];
   if(!sm||sm.v!==2||SUM_KEYS.some(k=>sm[k]!==det[k])||Date.now()-(sm.updatedAt||0)>3600e3)await saveSummary(pid,total,det);
   if(!cur||cur.name!==nu.name||cur.code!==nu.code||cur.client!==nu.client)await saveMeta(cur?projects.map(p=>p.id===pid?nu:p):[...projects,nu]);
@@ -2091,15 +2119,16 @@ function projectSettingsSheet(){
    <label class="fld"><span>Názov</span><input class="f" id="ps-name" value="${esc(S.project.name)}"></label>
    <div class="row2"><label class="fld"><span>Číslo zákazky</span><input class="f" id="ps-code" value="${esc(S.project.code||"")}"></label>
    <label class="fld"><span>Klient</span><input class="f" id="ps-client" value="${esc(S.project.client||"")}"></label></div>
+   ${pcatPick("ps-cat",pcat(cur))}
    <label class="usebox"><input type="checkbox" id="ps-arch" ${cur.archived?"checked":""}> Archivovať (pracovníci ho už neuvidia pri výbere projektu)</label>
    <div class="sheet-a"><button class="btn" data-sact="close">Zrušiť</button><button class="btn primary" data-sact="saveproj">Uložiť</button></div>`);
 }
 async function saveProjectSettings(){
   S.project.name=$("#ps-name").value.trim()||S.project.name;S.project.code=$("#ps-code").value.trim();S.project.client=$("#ps-client").value.trim();
-  const arch=$("#ps-arch").checked;
-  projects=projects.map(p=>p.id===proj?{...p,archived:arch}:p);
+  const arch=$("#ps-arch").checked,cat=pcatVal("ps-cat");S.project.cat=cat;
+  projects=projects.map(p=>p.id===proj?{...p,archived:arch,cat}:p);
   setProjTitle();changed();closeSheet();
-  try{await saveMeta(projects.map(p=>p.id===proj?{...p,name:S.project.name,code:S.project.code,client:S.project.client,archived:arch}:p))}catch(_){}
+  try{await saveMeta(projects.map(p=>p.id===proj?{...p,name:S.project.name,code:S.project.code,client:S.project.client,archived:arch,cat}:p))}catch(_){}
 }
 
 /* ---------- tasks ---------- */
@@ -3622,7 +3651,7 @@ function csvMapSheet(){
   openSheet(`<div class="grab"></div><h3>Import z CSV</h3><p class="note-p">Súbor <b>${esc(csvData.name)}</b> · ${rows.length} ${rows.length===1?"riadok":rows.length<5?"riadky":"riadkov"} · ${head.length} stĺpcov</p>
     <div class="fld"><span>Kam úlohy nahrať</span><div class="seg csv-target" role="group"><button data-csvt="new" aria-pressed="${csvData.target!=="old"}">Nový projekt</button><button data-csvt="old" aria-pressed="${csvData.target==="old"}">Existujúci projekt</button></div></div>
     ${csvData.target==="old"?`<label class="fld"><span>Projekt</span><select class="f" id="csv-proj">${activeProjects().map(p=>`<option value="${esc(p.id)}">${esc(p.name)}</option>`).join("")}</select></label>`
-      :`<div class="row3"><label class="fld"><span>Názov projektu</span><input class="f" id="csv-pname" value="${esc(csvData.pname??nm)}"></label><label class="fld"><span>Číslo zákazky</span><input class="f" id="csv-pcode" value="${esc(csvData.pcode||"")}"></label><label class="fld"><span>Klient</span><input class="f" id="csv-pclient" value="${esc(csvData.pclient||"")}"></label></div>`}
+      :`<div class="row3"><label class="fld"><span>Názov projektu</span><input class="f" id="csv-pname" value="${esc(csvData.pname??nm)}"></label><label class="fld"><span>Číslo zákazky</span><input class="f" id="csv-pcode" value="${esc(csvData.pcode||"")}"></label><label class="fld"><span>Klient</span><input class="f" id="csv-pclient" value="${esc(csvData.pclient||"")}"></label></div>${pcatPick("csv-pcat",csvData.pcat||projCat||"montaz")}`}
     <div class="fld"><span>Ktorý stĺpec je čo</span><div class="csv-map">${CSV_FIELDS.map(([k,l,req])=>`<label><span>${l}${req?" *":""}</span>${opt(k)}</label>`).join("")}</div></div>
     <label class="usebox"><input type="checkbox" id="csv-rest"${csvData.rest!==false?" checked":""}>Ostatné stĺpce pridať do poznámky úlohy</label>
     <label class="usebox"><input type="checkbox" id="csv-proof"${csvData.proof!==false?" checked":""}>Pri dokončení vyžadovať fotodôkaz</label>
@@ -3633,7 +3662,7 @@ function csvMapSheet(){
 function csvReadUi(){
   const m={};document.querySelectorAll("#sheet [data-cmap]").forEach(s=>{if(s.value!=="")m[s.dataset.cmap]=+s.value});csvData.map=m;
   const g=id=>{const e=$(id);return e?e.value.trim():undefined};
-  if($("#csv-pname")){csvData.pname=g("#csv-pname");csvData.pcode=g("#csv-pcode");csvData.pclient=g("#csv-pclient")}
+  if($("#csv-pname")){csvData.pname=g("#csv-pname");csvData.pcode=g("#csv-pcode");csvData.pclient=g("#csv-pclient");csvData.pcat=pcatVal("csv-pcat")}
   const r=$("#csv-rest");if(r)csvData.rest=r.checked;const pr=$("#csv-proof");if(pr)csvData.proof=pr.checked;
 }
 function csvTasks(){
@@ -3667,20 +3696,21 @@ async function csvCreate(btn){
   if(csvData.target==="old"){pid=($("#csv-proj")||{}).value;if(!pid){toast("Vyber projekt");return}}
   else{if(!csvData.pname){toast("Zadaj názov projektu");$("#csv-pname").focus();return}
     btn.disabled=true;btn.textContent="Zakladám projekt…";
-    pid=await makeProject({name:csvData.pname,code:csvData.pcode||"",client:csvData.pclient||""});if(!pid){btn.disabled=false;return}}
+    pid=await makeProject({name:csvData.pname,code:csvData.pcode||"",client:csvData.pclient||"",cat:csvData.pcat});if(!pid){btn.disabled=false;return}}
   btn.disabled=true;let n=0;
   for(const t of ts){btn.textContent=`Vytváram úlohy ${n+1}/${ts.length}…`;const {_techRaw,_techOk,...data}=t;
     try{await dbApi.collection("tasks").add({...data,projectId:pid,proofReq:csvData.proof!==false,photos:[],createdBy:myId,createdAt:Date.now()+n,updatedAt:Date.now(),...(data.status==="done"?{doneAt:Date.now()}:{})});n++}catch(err){toast(writeErr(err));break}}
   closeSheet();csvData=null;toast(`Nahraných ${n} úloh`);openProject(pid);
 }
-async function makeProject({name,code,client}){
+async function makeProject({name,code,client,cat}){
+  cat=pcat({cat});
   let base=(name.normalize("NFD").replace(/[\u0300-\u036f]/g,"").toLowerCase().replace(/[^a-z0-9]+/g,"-").replace(/^-|-$/g,"")||"projekt").slice(0,40);
   let id=base,k=2;while(projects.some(p=>p.id===id))id=base+"-"+(k++);
   let prices=DEFAULT_PRICES;
   try{const last=projects.slice().sort((a,b)=>((summary[b.id]||{}).updatedAt||0)-((summary[a.id]||{}).updatedAt||0))[0];
     if(last){const s=await dbApi.doc("admin/"+last.id).get();if(s.exists&&Array.isArray(s.data().prices))prices=s.data().prices}}catch(_){}
-  const state={version:1,project:{name,code,client},rate:18,rounding:"group",prices:JSON.parse(JSON.stringify(prices)),groups:[],recapHand:{stuB:null,stuAll:null},recapUse:{},issues:[]};
-  try{await dbApi.doc("admin/"+id).set(state);await saveMeta([...projects,{id,name,code,client,archived:false}]);await saveSummary(id,0);return id}
+  const state={version:1,project:{name,code,client,cat},rate:18,rounding:"group",prices:JSON.parse(JSON.stringify(prices)),groups:[],recapHand:{stuB:null,stuAll:null},recapUse:{},issues:[]};
+  try{await dbApi.doc("admin/"+id).set(state);await saveMeta([...projects,{id,name,code,client,archived:false,cat}]);await saveSummary(id,0);return id}
   catch(err){toast(err&&err.code==="quota_exceeded"?"Úložisko je plné":"Projekt sa nepodarilo založiť");return null}
 }
 document.addEventListener("click",async e=>{
